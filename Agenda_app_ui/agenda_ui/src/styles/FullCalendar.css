@@ -1,0 +1,38 @@
+
+
+.calendar-container {
+  padding: 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 400px;
+  color: #666;
+  font-size: 16px;
+}
+
+:deep(.fc) {
+  font-family: inherit;
+}
+
+:deep(.fc-button-primary) {
+  background-color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+:deep(.fc-button-primary:hover) {
+  background-color: #2563eb;
+}
+
+:deep(.fc-button-primary.fc-button-active) {
+  background-color: #1d4ed8;
+}
+
+:deep(.fc-daygrid-day.fc-day-today) {
+  background-color: #f0f9ff;
+}
