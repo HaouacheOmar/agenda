@@ -1,38 +1,119 @@
-
-
 .calendar-container {
-  padding: 20px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 10px;
+  border-radius: 14px;
+  background: linear-gradient(170deg, rgba(239, 247, 255, 0.78), rgba(223, 235, 246, 0.72));
+  border: 1px solid rgba(157, 185, 207, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 
 .loading {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 400px;
-  color: #666;
-  font-size: 16px;
+  min-height: 220px;
+  color: #355069;
+  font-size: 14px;
 }
 
 :deep(.fc) {
-  font-family: inherit;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #1d2732;
 }
 
-:deep(.fc-button-primary) {
-  background-color: #3b82f6;
-  border-color: #3b82f6;
+:deep(.fc .fc-toolbar.fc-header-toolbar) {
+  margin-bottom: 8px;
+  padding: 6px 4px;
 }
 
-:deep(.fc-button-primary:hover) {
-  background-color: #2563eb;
+:deep(.fc .fc-toolbar-title) {
+  font-size: 38px;
+  font-weight: 600;
+  color: #172736;
 }
 
-:deep(.fc-button-primary.fc-button-active) {
-  background-color: #1d4ed8;
+:deep(.fc .fc-button) {
+  border: none;
+  background: transparent;
+  color: #314b62;
+  box-shadow: none;
+  padding: 2px 8px;
+  font-size: 28px;
+  line-height: 1;
 }
 
-:deep(.fc-daygrid-day.fc-day-today) {
-  background-color: #f0f9ff;
+:deep(.fc .fc-button:hover),
+:deep(.fc .fc-button:focus),
+:deep(.fc .fc-button-primary:not(:disabled).fc-button-active),
+:deep(.fc .fc-button-primary:not(:disabled):active) {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: #1a2b3d;
+}
+
+:deep(.fc .fc-scrollgrid) {
+  border-radius: 10px;
+  border: 1px solid rgba(142, 165, 186, 0.5);
+  overflow: hidden;
+  background: rgba(240, 247, 252, 0.6);
+}
+
+:deep(.fc .fc-col-header-cell) {
+  background: rgba(238, 246, 252, 0.75);
+  border-color: rgba(182, 199, 215, 0.55);
+  height: 34px;
+}
+
+:deep(.fc .fc-col-header-cell-cushion) {
+  color: #111827;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+:deep(.fc .fc-daygrid-day-frame) {
+  min-height: 24px;
+}
+
+:deep(.fc .fc-daygrid-day) {
+  border-color: rgba(182, 199, 215, 0.55);
+  background: rgba(233, 243, 250, 0.36);
+}
+
+:deep(.fc .fc-daygrid-day.fc-day-today) {
+  background: rgba(219, 233, 246, 0.55);
+}
+
+:deep(.fc .fc-daygrid-day-number) {
+  font-size: 12px;
+  color: #1e293b;
+  text-decoration: none;
+}
+
+:deep(.fc .fc-day-other .fc-daygrid-day-number) {
+  color: #9ca8b6;
+}
+
+:deep(.fc .fc-event) {
+  border: none;
+  border-radius: 6px;
+  min-height: 14px;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: #f8fafc;
+  opacity: 0.85;
+}
+
+:deep(.fc .fc-daygrid-event-dot) {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  :deep(.fc .fc-toolbar-title) {
+    font-size: 24px;
+  }
+
+  :deep(.fc .fc-button) {
+    font-size: 22px;
+  }
 }

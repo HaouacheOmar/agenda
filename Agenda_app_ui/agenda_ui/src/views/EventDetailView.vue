@@ -20,7 +20,8 @@ const deleteConfirm = ref(false)
 const formData = ref({
   title: '',
   description: '',
-  planned_date: '',
+  start_date: '',
+  end_date: '',
   priroty: 'medium' as 'low' | 'medium' | 'high',
   event_list: 0,
   notified: false,
@@ -40,7 +41,8 @@ const fetchEventDetail = async () => {
     formData.value = {
       title: event.value.title,
       description: event.value.description,
-      planned_date: event.value.planned_date,
+      start_date: event.value.start_date,
+      end_date: event.value.end_date,
       priroty: event.value.priroty,
       event_list:
         typeof event.value.event_list === 'number'
@@ -62,6 +64,11 @@ const fetchEventDetail = async () => {
 
 const handleUpdate = async () => {
   if (!event.value) return
+
+  if (new Date(formData.value.end_date) < new Date(formData.value.start_date)) {
+    error.value = t('modals.addEvent.dateOrderError')
+    return
+  }
 
   loading.value = true
   error.value = null
@@ -97,7 +104,8 @@ const cancelEdit = () => {
     formData.value = {
       title: event.value.title,
       description: event.value.description,
-      planned_date: event.value.planned_date,
+      start_date: event.value.start_date,
+      end_date: event.value.end_date,
       priroty: event.value.priroty,
       event_list:
         typeof event.value.event_list === 'number'
@@ -193,9 +201,15 @@ onMounted(fetchEventDetail)
         </div>
 
         <div class="detail-field">
-          <label>{{ t('eventDetail.plannedDate') }}</label>
-          <p v-if="!isEditing">{{ formatDate(event.planned_date) }}</p>
-          <input v-else v-model="formData.planned_date" type="datetime-local" class="input" />
+          <label>{{ t('eventDetail.startDate') }}</label>
+          <p v-if="!isEditing">{{ formatDate(event.start_date) }}</p>
+          <input v-else v-model="formData.start_date" type="datetime-local" class="input" />
+        </div>
+
+        <div class="detail-field">
+          <label>{{ t('eventDetail.endDate') }}</label>
+          <p v-if="!isEditing">{{ formatDate(event.end_date) }}</p>
+          <input v-else v-model="formData.end_date" type="datetime-local" class="input" />
         </div>
 
         <!-- Description -->

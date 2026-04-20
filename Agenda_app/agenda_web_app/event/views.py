@@ -26,6 +26,26 @@ class EventlistAPIview(APIView):
             serializer.errors,
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
+class EventListHandlerAPIview(APIView):
+    def get_object(self, pk):
+        try:
+            return Event_list.objects.get(pk=pk)
+        except Event_list.DoesNotExist:
+            return None
+
+    def delete(self, request, pk):
+        event_list = self.get_object(pk=pk)
+        if not event_list:
+            return res(
+                {'err': 'event list not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Deleting an event list cascades to its events via FK on_delete=models.CASCADE.
+        event_list.delete()
+        return res(status=status.HTTP_204_NO_CONTENT)
     
 
 #this class handles the creations and retrieval of events 

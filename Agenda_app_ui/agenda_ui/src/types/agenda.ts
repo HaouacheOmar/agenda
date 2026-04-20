@@ -17,7 +17,8 @@ export interface EventItem {
   title: string
   description: string
   event_list: number | EventList
-  planned_date: string
+  start_date: string
+  end_date: string
   priroty: Priority // Changed from 'priority' to match your API
   notified: boolean
 }

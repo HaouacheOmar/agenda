@@ -7,6 +7,18 @@ class ApiService {
     this.baseUrl = baseUrl
   }
 
+  private async readErrorMessage(response: Response): Promise<string> {
+    const contentType = response.headers.get('content-type') || ''
+
+    if (contentType.includes('application/json')) {
+      const data = await response.json()
+      return data.err || data.error || data.message || `HTTP ${response.status}`
+    }
+
+    const text = await response.text()
+    return text || `HTTP ${response.status}`
+  }
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`
     const headers = {
@@ -49,6 +61,12 @@ class ApiService {
     return this.request('/event/eventlists/', {
       method: 'POST',
       body: JSON.stringify(data),
+    })
+  }
+
+  async deleteEventList(pk: number) {
+    return this.request(`/event/eventlists/${pk}/`, {
+      method: 'DELETE',
     })
   }
 
@@ -102,9 +120,33 @@ class ApiService {
   }
 
   async deleteCategory(pk: number) {
-    return this.request(`/category/categories/${pk}`, {
+    return this.request(`/category/categories/${pk}/`, {
       method: 'DELETE',
     })
+  }
+
+  async exportSQLite() {
+    const response = await fetch(`${this.baseUrl}/data/export-sqlite/`)
+    if (!response.ok) {
+      throw new Error(await this.readErrorMessage(response))
+    }
+    return response.blob()
+  }
+
+  async importSQLite(file: File) {
+    const formData = new FormData()
+    formData.append('database', file)
+
+    const response = await fetch(`${this.baseUrl}/data/import-sqlite/`, {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      throw new Error(await this.readErrorMessage(response))
+    }
+
+    return response.json()
   }
 }
 

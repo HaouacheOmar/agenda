@@ -7,7 +7,8 @@ export function useFullCalendar(items: EventItem[]) {
 const events = computed<EventInput[]>(() =>
   items.map(item => ({
     title: item.title,
-    start: item.planned_date,
+    start: item.start_date,
+    end: item.end_date,
     backgroundColor: '#3b82f6',
     extendedProps: {
       description: item.description,

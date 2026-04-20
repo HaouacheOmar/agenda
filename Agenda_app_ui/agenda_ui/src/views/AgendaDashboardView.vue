@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import FullCalendar from '../components/FullCalendar.vue'
-import EventListFilter from '../components/EventListFilter.vue'
-import CategoryFilter from '../components/CategoryFilter.vue'
 import PriorityMeter from '../components/PriorityMeter.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import eventIcon from '../assets/event-edit-svgrepo-com.svg'
+import listIcon from '../assets/list-svgrepo-com.svg'
+import categoryIcon from '../assets/category-svgrepo-com.svg'
+import importDbIcon from '../assets/import-db.svg'
+import exportDbIcon from '../assets/export-db.svg'
 import apiService from '../services/api'
 import type { EventItem, EventList, Priority, Category } from '../types/agenda'
 import '../styles/AgendaDashboardView.css'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const events = ref<EventItem[]>([])
 const eventLists = ref<EventList[]>([])
@@ -29,13 +32,16 @@ const categoryError = ref<string | null>(null)
 const showEventListModal = ref(false)
 const eventListSubmitting = ref(false)
 const eventListError = ref<string | null>(null)
+const dbTransferLoading = ref(false)
+const sqliteImportInput = ref<HTMLInputElement | null>(null)
 const notifications = ref<Array<{ id: string; title: string; message: string; type: string }>>([])
 const notificationTimeout = ref<ReturnType<typeof setInterval> | null>(null)
 
 const newEventForm = ref({
   title: '',
   description: '',
-  planned_date: '',
+  start_date: '',
+  end_date: '',
   event_list: '' as '' | number,
   priroty: 'medium' as Priority,
 })
@@ -60,16 +66,41 @@ const filteredEventLists = computed(() => {
   })
 })
 
-// Filtered events based on selected list
+// Filtered events based on selected category/list relationship
 const filteredEvents = computed(() => {
-  if (!selectedEventListId.value) {
-    return events.value
-  }
   return events.value.filter((event) => {
-    const eventListId =
-      typeof event.event_list === 'number' ? event.event_list : event.event_list.id
-    return eventListId === selectedEventListId.value
+    const eventListId = getEventListId(event)
+
+    if (selectedEventListId.value && eventListId !== selectedEventListId.value) {
+      return false
+    }
+
+    if (selectedCategoryId.value) {
+      const eventList = eventLists.value.find((list) => list.id === eventListId)
+      if (!eventList) {
+        return false
+      }
+      if (getCategoryId(eventList) !== selectedCategoryId.value) {
+        return false
+      }
+    }
+
+    return true
   })
+})
+
+const selectedCategoryValue = computed({
+  get: () => (selectedCategoryId.value ? String(selectedCategoryId.value) : ''),
+  set: (value: string) => {
+    selectedCategoryId.value = value ? parseInt(value) : null
+  },
+})
+
+const selectedEventListValue = computed({
+  get: () => (selectedEventListId.value ? String(selectedEventListId.value) : ''),
+  set: (value: string) => {
+    selectedEventListId.value = value ? parseInt(value) : null
+  },
 })
 
 const highPriorityCount = computed(
@@ -128,7 +159,8 @@ const closeAddEventModal = () => {
   newEventForm.value = {
     title: '',
     description: '',
-    planned_date: '',
+    start_date: '',
+    end_date: '',
     event_list: '',
     priroty: 'medium',
   }
@@ -137,10 +169,16 @@ const closeAddEventModal = () => {
 const handleCreateEvent = async () => {
   if (
     !newEventForm.value.title ||
-    !newEventForm.value.planned_date ||
+    !newEventForm.value.start_date ||
+    !newEventForm.value.end_date ||
     !newEventForm.value.event_list
   ) {
     formError.value = t('modals.addEvent.error')
+    return
+  }
+
+  if (new Date(newEventForm.value.end_date) < new Date(newEventForm.value.start_date)) {
+    formError.value = t('modals.addEvent.dateOrderError')
     return
   }
 
@@ -150,7 +188,8 @@ const handleCreateEvent = async () => {
     await apiService.createEvent({
       title: newEventForm.value.title,
       description: newEventForm.value.description,
-      planned_date: newEventForm.value.planned_date,
+      start_date: newEventForm.value.start_date,
+      end_date: newEventForm.value.end_date,
       event_list: newEventForm.value.event_list,
       priroty: newEventForm.value.priroty,
       notified: false,
@@ -208,13 +247,106 @@ const handleCreateCategory = async () => {
 }
 
 const handleDeleteCategory = async (categoryId: number) => {
-  if (!confirm('Delete this category?')) return
+  if (!confirm(t('dashboard.confirmDeleteCategory'))) return
 
   try {
     await apiService.deleteCategory(categoryId)
+    if (selectedCategoryId.value === categoryId) {
+      selectedCategoryId.value = null
+      selectedEventListId.value = null
+    }
+
     await fetchCategories()
+    await fetchEventLists()
+    await fetchEvents()
   } catch (err) {
     console.error('Error deleting category:', err)
+  }
+}
+
+const handleDeleteEventList = async (eventListId: number) => {
+  if (!confirm(t('dashboard.confirmDeleteEventList'))) return
+
+  try {
+    await apiService.deleteEventList(eventListId)
+    if (selectedEventListId.value === eventListId) {
+      selectedEventListId.value = null
+    }
+
+    await fetchEventLists()
+    await fetchEvents()
+  } catch (err) {
+    console.error('Error deleting event list:', err)
+  }
+}
+
+const buildSQLiteFileName = () => {
+  const now = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(
+    now.getHours(),
+  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+  return `agenda-backup-${stamp}.sqlite3`
+}
+
+const handleExportSQLite = async () => {
+  dbTransferLoading.value = true
+  try {
+    const blob = await apiService.exportSQLite()
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = downloadUrl
+    anchor.download = buildSQLiteFileName()
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.URL.revokeObjectURL(downloadUrl)
+
+    showNotification(t('dashboard.exportDatabase'), t('dashboard.exportDatabaseSuccess'), 'low')
+  } catch (err) {
+    const message = err instanceof Error ? err.message : t('dashboard.exportDatabaseError')
+    showNotification(t('dashboard.exportDatabase'), message, 'high')
+  } finally {
+    dbTransferLoading.value = false
+  }
+}
+
+const triggerSQLiteImport = () => {
+  sqliteImportInput.value?.click()
+}
+
+const handleSQLiteImportSelected = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+
+  if (!file) {
+    return
+  }
+
+  if (!confirm(t('dashboard.confirmImportDatabase'))) {
+    input.value = ''
+    return
+  }
+
+  dbTransferLoading.value = true
+  try {
+    const response = (await apiService.importSQLite(file)) as { msg?: string; backup?: string }
+
+    await fetchCategories()
+    await fetchEventLists()
+    await fetchEvents()
+
+    const successMessage = response.backup
+      ? `${t('dashboard.importDatabaseSuccess')} (${response.backup})`
+      : t('dashboard.importDatabaseSuccess')
+
+    showNotification(t('dashboard.importDatabase'), successMessage, 'low')
+  } catch (err) {
+    const message = err instanceof Error ? err.message : t('dashboard.importDatabaseError')
+    showNotification(t('dashboard.importDatabase'), message, 'high')
+  } finally {
+    input.value = ''
+    dbTransferLoading.value = false
   }
 }
 
@@ -251,11 +383,114 @@ const handleCreateEventList = async () => {
   }
 }
 
+const getCategoryId = (eventList: EventList) =>
+  typeof eventList.category === 'number' ? eventList.category : eventList.category.id
+
+const getEventListId = (eventItem: EventItem) =>
+  typeof eventItem.event_list === 'number' ? eventItem.event_list : eventItem.event_list.id
+
+const getPriorityClass = (priority: Priority) => {
+  if (priority === 'high') return 'priority-chip-high'
+  if (priority === 'medium') return 'priority-chip-medium'
+  return 'priority-chip-low'
+}
+
+const getEventCellClass = (priority: Priority) => {
+  if (priority === 'high') return 'event-node-high-light'
+  if (priority === 'medium') return 'event-node-medium-light'
+  return 'event-node-low-light'
+}
+
+watch(selectedCategoryId, (categoryId) => {
+  if (!selectedEventListId.value) {
+    return
+  }
+
+  const isSelectedListValid = eventLists.value.some((list) => {
+    if (list.id !== selectedEventListId.value) {
+      return false
+    }
+    if (!categoryId) {
+      return true
+    }
+    return getCategoryId(list) === categoryId
+  })
+
+  if (!isSelectedListValid) {
+    selectedEventListId.value = null
+  }
+})
+
+watch(selectedEventListId, (eventListId) => {
+  if (!eventListId) {
+    return
+  }
+
+  const selectedList = eventLists.value.find((list) => list.id === eventListId)
+  if (!selectedList) {
+    return
+  }
+
+  const linkedCategoryId = getCategoryId(selectedList)
+  if (selectedCategoryId.value !== linkedCategoryId) {
+    selectedCategoryId.value = linkedCategoryId
+  }
+})
+
+const formatDateRange = (startDate: string, endDate: string) => {
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+  const localeCode = locale.value === 'ar' ? 'ar-DZ' : 'en-GB'
+
+  const formatter = new Intl.DateTimeFormat(localeCode, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+
+  return `${formatter.format(start)} - ${formatter.format(end)}`
+}
+
+const hierarchyData = computed(() => {
+  const visibleCategories = selectedCategoryId.value
+    ? categories.value.filter((cat) => cat.id === selectedCategoryId.value)
+    : categories.value
+
+  const sortedCategories = [...visibleCategories].sort((a, b) => a.title.localeCompare(b.title))
+
+  return sortedCategories.map((category) => {
+    const lists = filteredEventLists.value
+      .filter((eventList) => getCategoryId(eventList) === category.id)
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .map((eventList) => {
+        const listEvents = filteredEvents.value
+          .filter((eventItem) => getEventListId(eventItem) === eventList.id)
+          .sort(
+            (a, b) =>
+              new Date(a.start_date).getTime() - new Date(b.start_date).getTime(),
+          )
+
+        return {
+          ...eventList,
+          events: listEvents,
+        }
+      })
+
+    return {
+      ...category,
+      eventLists: lists,
+    }
+  })
+})
+
 const checkUpcomingEvents = () => {
   events.value.forEach((event) => {
     if (event.notified) return
 
-    const eventDate = new Date(event.planned_date)
+    const eventDate = new Date(event.start_date)
     const today = new Date()
     const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 
@@ -374,30 +609,73 @@ onMounted(() => {
     <div class="dashboard-header">
       <div>
         <h1>{{ t('dashboard.title') }}</h1>
-        <p class="subtitle">{{ t('dashboard.subtitle') }}</p>
       </div>
-      <div style="display: flex; gap: 12px; align-items: center">
-        <LanguageSwitcher />
-        <button class="btn-primary" @click="openAddEventModal">
-          + {{ t('dashboard.newEvent') }}
+      <div class="header-actions">
+        <button class="btn-action btn-solid" @click="openAddEventModal">
+          <img :src="eventIcon" alt="Event" class="btn-icon" />
+          <span>+ {{ t('dashboard.addEvent') }}</span>
         </button>
-        <button class="btn-primary" @click="openEventListModal">
-          + {{ t('dashboard.addEventList') }}
+        <button class="btn-action btn-outline" @click="openEventListModal">
+          <img :src="listIcon" alt="Event List" class="btn-icon" />
+          <span>+ {{ t('dashboard.addEventList') }}</span>
         </button>
-        <button class="btn-primary" @click="openCategoryModal">
-          + {{ t('dashboard.addCategory') }}
+        <button class="btn-action btn-outline" @click="openCategoryModal">
+          <img :src="categoryIcon" alt="Category" class="btn-icon" />
+          <span>+ {{ t('dashboard.addCategory') }}</span>
         </button>
+        <button class="btn-action btn-outline" :disabled="dbTransferLoading" @click="handleExportSQLite">
+          <img :src="exportDbIcon" alt="Export" class="btn-icon" />
+          <span>{{ t('dashboard.exportDatabase') }}</span>
+        </button>
+        <button class="btn-action btn-outline" :disabled="dbTransferLoading" @click="triggerSQLiteImport">
+          <img :src="importDbIcon" alt="Import" class="btn-icon" />
+          <span>{{ t('dashboard.importDatabase') }}</span>
+        </button>
+        <input
+          ref="sqliteImportInput"
+          type="file"
+          accept=".sqlite3,.sqlite,.db,application/x-sqlite3"
+          class="hidden-file-input"
+          @change="handleSQLiteImportSelected"
+        />
       </div>
+    </div>
+
+    <div class="dashboard-toolbar">
+      <div class="linked-filters">
+        <div class="filter-field">
+          <label for="dashboard-category-filter">{{ t('filter.categoryLabel') }}</label>
+          <select id="dashboard-category-filter" v-model="selectedCategoryValue" class="filter-select">
+            <option value="">{{ t('filter.allCategories') }}</option>
+            <option v-for="cat in categories" :key="cat.id" :value="String(cat.id)">
+              {{ cat.title }}
+            </option>
+          </select>
+        </div>
+
+        <div class="filter-field">
+          <label for="dashboard-eventlist-filter">{{ t('filter.label') }}</label>
+          <select
+            id="dashboard-eventlist-filter"
+            v-model="selectedEventListValue"
+            class="filter-select"
+            :disabled="!filteredEventLists.length"
+          >
+            <option value="">{{ t('filter.allEvents') }}</option>
+            <option v-for="list in filteredEventLists" :key="list.id" :value="String(list.id)">
+              {{ list.title }}
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <LanguageSwitcher />
     </div>
 
     <div v-if="error" class="alert alert-error">
       {{ error }}
       <button @click="fetchEvents" class="btn-retry">{{ t('dashboard.retry') }}</button>
     </div>
-
-    <CategoryFilter v-model="selectedCategoryId" :categories="categories" />
-
-    <EventListFilter v-model="selectedEventListId" :eventLists="filteredEventLists" />
 
     <div class="calendar-section">
       <FullCalendar
@@ -408,29 +686,107 @@ onMounted(() => {
       />
     </div>
 
-    <div class="stats-section">
-      <div class="stat-card total-events">
-        <h3>{{ t('dashboard.totalEvents') }}</h3>
-        <p class="stat-value">{{ filteredEvents.length }}</p>
+    <section class="hierarchy-section">
+      <h2>{{ t('dashboard.hierarchyTitle') }}</h2>
+
+      <div v-if="!hierarchyData.length" class="hierarchy-empty">
+        {{ t('dashboard.hierarchyEmpty') }}
       </div>
-      <PriorityMeter
-        :label="t('dashboard.highPriority')"
-        :value="highPriorityCount"
-        :total="filteredEvents.length"
-        color="#ef4444"
-      />
-      <PriorityMeter
-        :label="t('dashboard.mediumPriority')"
-        :value="mediumPriorityCount"
-        :total="filteredEvents.length"
-        color="#f59e0b"
-      />
-      <PriorityMeter
-        :label="t('dashboard.lowPriority')"
-        :value="lowPriorityCount"
-        :total="filteredEvents.length"
-        color="#10b981"
-      />
+
+      <ul v-else class="category-tree">
+        <li v-for="category in hierarchyData" :key="category.id" class="category-node">
+          <div class="category-node-header">
+            <h3>{{ category.title }}</h3>
+            <div class="node-actions">
+              <button
+                class="btn-node-delete"
+                type="button"
+                @click.stop="handleDeleteCategory(category.id)"
+              >
+                {{ t('dashboard.deleteCategory') }}
+              </button>
+              <span class="category-node-arrow">›</span>
+            </div>
+          </div>
+
+          <ul class="event-list-tree">
+            <li
+              v-for="eventList in category.eventLists"
+              :key="eventList.id"
+              class="event-list-node"
+            >
+              <div class="event-list-header">
+                <h4>{{ eventList.title }}</h4>
+                <button
+                  class="btn-node-delete"
+                  type="button"
+                  @click.stop="handleDeleteEventList(eventList.id)"
+                >
+                  {{ t('dashboard.deleteEventList') }}
+                </button>
+              </div>
+
+              <p v-if="!eventList.events.length" class="tree-empty">
+                {{ t('dashboard.noEventsInEventList') }}
+              </p>
+
+              <ul v-else class="event-tree">
+                <li
+                  v-for="eventItem in eventList.events"
+                  :key="eventItem.id"
+                  :class="['event-node', getEventCellClass(eventItem.priroty)]"
+                  @click="handleEventClick(eventItem.id)"
+                >
+                  <div class="event-node-main">
+                    <span class="event-node-title">{{ eventItem.title }}</span>
+                    <span :class="['priority-chip', getPriorityClass(eventItem.priroty)]">
+                      {{ t('priority.' + eventItem.priroty) }}
+                    </span>
+                  </div>
+                  <p class="event-node-dates">
+                    {{ formatDateRange(eventItem.start_date, eventItem.end_date) }}
+                  </p>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </li>
+      </ul>
+    </section>
+
+    <div class="stats-section">
+      <div class="stat-card">
+        <PriorityMeter
+          :label="t('dashboard.totalEvents')"
+          :value="filteredEvents.length"
+          :total="filteredEvents.length > 0 ? filteredEvents.length : 1"
+          color="#3b82f6"
+        />
+      </div>
+      <div class="stat-card">
+        <PriorityMeter
+          :label="t('dashboard.highPriority')"
+          :value="highPriorityCount"
+          :total="filteredEvents.length"
+          color="#ef4444"
+        />
+      </div>
+      <div class="stat-card">
+        <PriorityMeter
+          :label="t('dashboard.mediumPriority')"
+          :value="mediumPriorityCount"
+          :total="filteredEvents.length"
+          color="#f59e0b"
+        />
+      </div>
+      <div class="stat-card">
+        <PriorityMeter
+          :label="t('dashboard.lowPriority')"
+          :value="lowPriorityCount"
+          :total="filteredEvents.length"
+          color="#10b981"
+        />
+      </div>
     </div>
 
     <div v-if="showAddEventModal" class="modal-overlay" @click="closeAddEventModal">
@@ -461,8 +817,11 @@ onMounted(() => {
             :placeholder="t('modals.addEvent.descriptionPlaceholder')"
           ></textarea>
 
-          <label class="form-label">{{ t('modals.addEvent.plannedDateLabel') }}</label>
-          <input v-model="newEventForm.planned_date" type="datetime-local" class="input" />
+          <label class="form-label">{{ t('modals.addEvent.startDateLabel') }}</label>
+          <input v-model="newEventForm.start_date" type="datetime-local" class="input" />
+
+          <label class="form-label">{{ t('modals.addEvent.endDateLabel') }}</label>
+          <input v-model="newEventForm.end_date" type="datetime-local" class="input" />
 
           <label class="form-label">{{ t('modals.addEvent.eventListLabel') }}</label>
           <select v-model="newEventForm.event_list" class="input">

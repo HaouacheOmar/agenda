@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import FullCalendar from '@fullcalendar/vue3'
 import dayGridPlugin from '@fullcalendar/daygrid'
-import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
-import listPlugin from '@fullcalendar/list'
-import arLocale from '@fullcalendar/core/locales/ar'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { CalendarOptions, EventInput } from '@fullcalendar/core'
@@ -37,36 +34,6 @@ const arDZLocale: any = {
     return '+' + n
   },
   noEventsText: 'لا توجد أحداث',
-  monthNames: [
-    'جانفي',
-    'فيفري',
-    'مارس',
-    'أفريل',
-    'ماي',
-    'جوان',
-    'جويليه',
-    'أوت',
-    'سبتمبر',
-    'أكتوبر',
-    'نوفمبر',
-    'ديسمبر',
-  ],
-  monthNamesShort: [
-    'جانفي',
-    'فيفري',
-    'مارس',
-    'أفريل',
-    'ماي',
-    'جوان',
-    'جويليه',
-    'أوت',
-    'سبتمبر',
-    'أكتوبر',
-    'نوفمبر',
-    'ديسمبر',
-  ],
-  dayNames: ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'],
-  dayNamesShort: ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'],
 }
 
 interface Props {
@@ -88,7 +55,8 @@ const calendarEvents = computed<EventInput[]>(() =>
   props.events.map((event) => ({
     id: String(event.id),
     title: event.title,
-    start: event.planned_date,
+    start: event.start_date,
+    end: event.end_date,
     backgroundColor: getPriorityColor(event.priroty),
     borderColor: getPriorityColor(event.priroty),
     extendedProps: {
@@ -110,19 +78,23 @@ function getPriorityColor(priority: string): string {
 }
 
 const calendarOptions = computed<CalendarOptions>(() => ({
-  plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin],
+  plugins: [dayGridPlugin, interactionPlugin],
   initialView: 'dayGridMonth',
   locale: locale.value === 'ar' ? arDZLocale : 'en',
   direction: locale.value === 'ar' ? 'rtl' : 'ltr',
   headerToolbar: {
-    left: 'prev,next today',
+    left: 'prev',
     center: 'title',
-    right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek',
+    right: 'next',
   },
   events: calendarEvents.value,
   height: 'auto',
+  contentHeight: 'auto',
   editable: false,
   selectable: true,
+  displayEventTime: false,
+  fixedWeekCount: true,
+  showNonCurrentDates: true,
   eventClick: (info) => {
     const id = parseInt(info.event.id)
     emit('eventClick', id)
