@@ -22,7 +22,7 @@ python manage.py test             # all apps
 python manage.py test event.tests.SomeTestCase.test_method   # single test
 ```
 
-`SECRET_KEY` is loaded from `.env` via python-dotenv. API tests live in `event/tests.py` (DRF `APITestCase`).
+`SECRET_KEY` is loaded from `.env` via python-dotenv. `DB_PATH` overrides the SQLite file (used by the e2e suite). Tests are DRF `APITestCase`s in each app's `tests.py`; `Agenda_app/tests.py` covers SQLite import/export by patching `get_sqlite_db_path` to a temp file.
 
 Frontend (run from `Agenda_app_ui/agenda_ui/`):
 
@@ -32,9 +32,13 @@ npm run dev          # Vite on :5173 (the only origins allowed by CORS)
 npm run build        # type-check (vue-tsc) + vite build in parallel
 npm run type-check
 npm run format       # prettier on src/
+npm run test:unit    # Vitest (jsdom), src/**/*.test.ts
+npx vitest run src/services/api.test.ts -t "DRF"     # single file / test name
+npm run test:e2e     # Playwright, e2e/*.spec.ts
+npx playwright test -g "event detail"                # single e2e test
 ```
 
-No test runner or linter is configured for the frontend.
+The e2e suite starts its own servers (Django on 8001 with `DB_PATH=node_modules/.tmp/e2e.sqlite3`, recreated each run; Vite on 5174) and uses the locally installed Chrome (`channel: 'chrome'`), so it never touches `db.sqlite3` or the dev servers. jsdom is pinned to 26 because newer versions don't support Node 23. New dev deps may need `npm i --legacy-peer-deps` (npm 10.9 arborist crash with the `vue: beta` overrides).
 
 ## Architecture
 

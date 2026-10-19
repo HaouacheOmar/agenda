@@ -6,6 +6,7 @@
     "cypress.config.*",
     "nightwatch.conf.*",
     "playwright.config.*",
+    "e2e/**/*",
     "eslint.config.*"
   ],
   "compilerOptions": {
@@ -14,6 +15,8 @@
 
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "types": ["node"]
+    "types": ["node"],
+    // DOM for the callbacks e2e tests run in the browser via page.evaluate().
+    "lib": ["es2024", "ESNext.Array", "ESNext.Collection", "ESNext.Error", "ESNext.Iterator", "ESNext.Promise", "DOM"]
   }
 }
