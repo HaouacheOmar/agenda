@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { useLocale } from '../composables/useLocale'
 
-const { locale, toggleLocale } = useLocale()
+const { locale, toggleLocale, t } = useLocale()
 </script>
 
 <template>
-  <button class="language-toggle" @click="toggleLocale" :aria-label="locale === 'en' ? 'Switch to Arabic' : 'Switch to English'">
+  <button class="language-toggle" @click="toggleLocale" :aria-label="t('common.switchLanguage')">
     <span class="flag">{{ locale === 'en' ? '🇸🇦' : '🇬🇧' }}</span>
     <span class="lang-code">{{ locale === 'en' ? 'AR' : 'EN' }}</span>
   </button>

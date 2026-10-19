@@ -1,62 +1,60 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import apiService from '../services/api'
-import type { EventItem, EventList } from '../types/agenda'
+import { PRIORITIES, PRIORITY_META, idOf, toIso, toLocalInput } from '../types/agenda'
+import type { EventItem } from '../types/agenda'
 import '../styles/EventDetailView.css'
 
+const props = defineProps<{ id: number }>()
+
 const { t, locale } = useI18n()
-const route = useRoute()
 const router = useRouter()
 
 const event = ref<EventItem | null>(null)
-const eventList = ref<EventList | null>(null)
+const eventList = computed(() =>
+  event.value && typeof event.value.event_list === 'object' ? event.value.event_list : null,
+)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const isEditing = ref(false)
 const deleteConfirm = ref(false)
 
-const formData = ref({
+const toForm = (e: EventItem) => ({
+  title: e.title,
+  description: e.description,
+  start_date: toLocalInput(e.start_date),
+  end_date: toLocalInput(e.end_date),
+  priroty: e.priroty,
+  event_list: idOf(e.event_list),
+  notified: e.notified,
+})
+
+const formData = ref<ReturnType<typeof toForm>>({
   title: '',
   description: '',
   start_date: '',
   end_date: '',
-  priroty: 'medium' as 'low' | 'medium' | 'high',
+  priroty: 'medium',
   event_list: 0,
   notified: false,
 })
+
+const errorMessage = (err: unknown) => (err instanceof Error ? err.message : t('common.error'))
+
+const setEvent = (e: EventItem) => {
+  event.value = e
+  formData.value = toForm(e)
+}
 
 const fetchEventDetail = async () => {
   loading.value = true
   error.value = null
   try {
-    const pk = parseInt(sessionStorage.getItem('eventId') || '0')
-    if (pk === 0) {
-      error.value = 'Event not found'
-      return
-    }
-    event.value = (await apiService.getEventById(pk)) as EventItem
-
-    formData.value = {
-      title: event.value.title,
-      description: event.value.description,
-      start_date: event.value.start_date,
-      end_date: event.value.end_date,
-      priroty: event.value.priroty,
-      event_list:
-        typeof event.value.event_list === 'number'
-          ? event.value.event_list
-          : event.value.event_list.id,
-      notified: event.value.notified,
-    }
-
-    if (typeof event.value.event_list === 'object') {
-      eventList.value = event.value.event_list
-    }
+    setEvent(await apiService.getEventById(props.id))
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to fetch event'
-    console.error('Error fetching event:', err)
+    error.value = errorMessage(err)
   } finally {
     loading.value = false
   }
@@ -73,12 +71,16 @@ const handleUpdate = async () => {
   loading.value = true
   error.value = null
   try {
-    await apiService.updateEvent(event.value.id, formData.value)
+    setEvent(
+      await apiService.updateEvent(event.value.id, {
+        ...formData.value,
+        start_date: toIso(formData.value.start_date),
+        end_date: toIso(formData.value.end_date),
+      }),
+    )
     isEditing.value = false
-    await fetchEventDetail() // Refresh data
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to update event'
-    console.error('Error updating event:', err)
+    error.value = errorMessage(err)
   } finally {
     loading.value = false
   }
@@ -93,37 +95,14 @@ const handleDelete = async () => {
     await apiService.deleteEvent(event.value.id)
     router.push({ name: 'dashboard' })
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to delete event'
-    console.error('Error deleting event:', err)
+    error.value = errorMessage(err)
     loading.value = false
   }
 }
 
 const cancelEdit = () => {
-  if (event.value) {
-    formData.value = {
-      title: event.value.title,
-      description: event.value.description,
-      start_date: event.value.start_date,
-      end_date: event.value.end_date,
-      priroty: event.value.priroty,
-      event_list:
-        typeof event.value.event_list === 'number'
-          ? event.value.event_list
-          : event.value.event_list.id,
-      notified: event.value.notified,
-    }
-  }
+  if (event.value) formData.value = toForm(event.value)
   isEditing.value = false
-}
-
-const getPriorityColor = (priority: string) => {
-  const colors: Record<string, string> = {
-    high: '#ef4444',
-    medium: '#f59e0b',
-    low: '#10b981',
-  }
-  return colors[priority] || '#3b82f6'
 }
 
 const formatDate = (dateString: string) => {
@@ -189,14 +168,12 @@ onMounted(fetchEventDetail)
           <div
             v-if="!isEditing"
             class="priority-badge"
-            :style="{ backgroundColor: getPriorityColor(event.priroty) }"
+            :style="{ backgroundColor: PRIORITY_META[event.priroty].color }"
           >
             {{ t('priority.' + event.priroty) }}
           </div>
           <select v-else v-model="formData.priroty" class="input">
-            <option value="low">{{ t('priority.low') }}</option>
-            <option value="medium">{{ t('priority.medium') }}</option>
-            <option value="high">{{ t('priority.high') }}</option>
+            <option v-for="p in PRIORITIES" :key="p" :value="p">{{ t('priority.' + p) }}</option>
           </select>
         </div>
 
@@ -262,7 +239,7 @@ onMounted(fetchEventDetail)
       <div v-if="deleteConfirm" class="modal-overlay" @click="deleteConfirm = false">
         <div class="modal" @click.stop>
           <h2>{{ t('eventDetail.confirmDelete') }}</h2>
-          <p>{{ t('eventDetail.confirmDeleteMessage').replace('{title}', event.title) }}</p>
+          <p>{{ t('eventDetail.confirmDeleteMessage', { title: event.title }) }}</p>
           <div class="modal-actions">
             <button @click="handleDelete" class="btn-danger" :disabled="loading">
               {{ loading ? t('eventDetail.deleting') : t('eventDetail.delete') }}

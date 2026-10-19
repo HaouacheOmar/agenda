@@ -1,12 +1,9 @@
 <script setup lang="ts">
-interface Props {
+defineProps<{
   label: string
   value: number
-  total: number
   color: string
-}
-
-const props = defineProps<Props>()
+}>()
 </script>
 
 <template>
@@ -19,20 +16,12 @@ const props = defineProps<Props>()
           cy="60"
           r="40"
           fill="none"
-          stroke="#d6dde7"
-          stroke-width="3"
-        />
-        <circle
-          cx="60"
-          cy="60"
-          r="40"
-          fill="none"
           :stroke="color"
           stroke-width="3"
         />
       </svg>
       <div class="meter-content">
-        <span class="meter-value" :style="{ color: props.color }">{{ value }}</span>
+        <span class="meter-value" :style="{ color }">{{ value }}</span>
       </div>
     </div>
   </div>

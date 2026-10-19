@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import FullCalendar from '../components/FullCalendar.vue'
@@ -11,6 +11,7 @@ import categoryIcon from '../assets/category-svgrepo-com.svg'
 import importDbIcon from '../assets/import-db.svg'
 import exportDbIcon from '../assets/export-db.svg'
 import apiService from '../services/api'
+import { PRIORITIES, PRIORITY_META, idOf, toIso } from '../types/agenda'
 import type { EventItem, EventList, Priority, Category } from '../types/agenda'
 import '../styles/AgendaDashboardView.css'
 
@@ -34,10 +35,10 @@ const eventListSubmitting = ref(false)
 const eventListError = ref<string | null>(null)
 const dbTransferLoading = ref(false)
 const sqliteImportInput = ref<HTMLInputElement | null>(null)
-const notifications = ref<Array<{ id: string; title: string; message: string; type: string }>>([])
-const notificationTimeout = ref<ReturnType<typeof setInterval> | null>(null)
+const notifications = ref<Array<{ id: string; title: string; message: string; type: Priority }>>([])
+let upcomingCheckInterval: ReturnType<typeof setInterval> | undefined
 
-const newEventForm = ref({
+const emptyEventForm = () => ({
   title: '',
   description: '',
   start_date: '',
@@ -45,85 +46,54 @@ const newEventForm = ref({
   event_list: '' as '' | number,
   priroty: 'medium' as Priority,
 })
+const newEventForm = ref(emptyEventForm())
+const newCategoryForm = ref({ title: '' })
+const newEventListForm = ref({ title: '', category: '' as '' | number })
 
-const newCategoryForm = ref({
-  title: '',
-})
+const errorMessage = (err: unknown) => (err instanceof Error ? err.message : t('common.error'))
+const byTitle = (a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title)
 
-const newEventListForm = ref({
-  title: '',
-  category: '' as '' | number,
-})
+const filteredEventLists = computed(() =>
+  selectedCategoryId.value
+    ? eventLists.value.filter((list) => idOf(list.category) === selectedCategoryId.value)
+    : eventLists.value,
+)
 
-// Filtered event lists based on selected category
-const filteredEventLists = computed(() => {
-  if (!selectedCategoryId.value) {
-    return eventLists.value
-  }
-  return eventLists.value.filter((list) => {
-    const categoryId = typeof list.category === 'number' ? list.category : list.category.id
-    return categoryId === selectedCategoryId.value
-  })
-})
-
-// Filtered events based on selected category/list relationship
 const filteredEvents = computed(() => {
-  return events.value.filter((event) => {
-    const eventListId = getEventListId(event)
+  if (!selectedEventListId.value && !selectedCategoryId.value) return events.value
+  const visibleListIds = new Set(
+    filteredEventLists.value
+      .filter((list) => !selectedEventListId.value || list.id === selectedEventListId.value)
+      .map((list) => list.id),
+  )
+  return events.value.filter((event) => visibleListIds.has(idOf(event.event_list)))
+})
 
-    if (selectedEventListId.value && eventListId !== selectedEventListId.value) {
-      return false
-    }
-
-    if (selectedCategoryId.value) {
-      const eventList = eventLists.value.find((list) => list.id === eventListId)
-      if (!eventList) {
-        return false
-      }
-      if (getCategoryId(eventList) !== selectedCategoryId.value) {
-        return false
-      }
-    }
-
-    return true
+// <select> values are strings; the filter state is number | null.
+const numericSelect = (source: typeof selectedCategoryId) =>
+  computed({
+    get: () => (source.value ? String(source.value) : ''),
+    set: (value: string) => {
+      source.value = value ? Number(value) : null
+    },
   })
+const selectedCategoryValue = numericSelect(selectedCategoryId)
+const selectedEventListValue = numericSelect(selectedEventListId)
+
+const priorityCounts = computed(() => {
+  const counts: Record<Priority, number> = { low: 0, medium: 0, high: 0 }
+  filteredEvents.value.forEach((e) => counts[e.priroty]++)
+  return counts
 })
-
-const selectedCategoryValue = computed({
-  get: () => (selectedCategoryId.value ? String(selectedCategoryId.value) : ''),
-  set: (value: string) => {
-    selectedCategoryId.value = value ? parseInt(value) : null
-  },
-})
-
-const selectedEventListValue = computed({
-  get: () => (selectedEventListId.value ? String(selectedEventListId.value) : ''),
-  set: (value: string) => {
-    selectedEventListId.value = value ? parseInt(value) : null
-  },
-})
-
-const highPriorityCount = computed(
-  () => filteredEvents.value.filter((e) => e.priroty === 'high').length,
-)
-
-const mediumPriorityCount = computed(
-  () => filteredEvents.value.filter((e) => e.priroty === 'medium').length,
-)
-
-const lowPriorityCount = computed(
-  () => filteredEvents.value.filter((e) => e.priroty === 'low').length,
-)
 
 const fetchEvents = async () => {
   loading.value = true
   error.value = null
   try {
-    events.value = (await apiService.getEvents()) as EventItem[]
+    events.value = await apiService.getEvents()
     checkUpcomingEvents()
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('dashboard.error')
-    console.error('Error fetching events:', err)
   } finally {
     loading.value = false
   }
@@ -131,7 +101,7 @@ const fetchEvents = async () => {
 
 const fetchEventLists = async () => {
   try {
-    eventLists.value = (await apiService.getEventLists()) as EventList[]
+    eventLists.value = await apiService.getEventLists()
   } catch (err) {
     console.error('Error fetching event lists:', err)
   }
@@ -139,45 +109,33 @@ const fetchEventLists = async () => {
 
 const fetchCategories = async () => {
   try {
-    categories.value = (await apiService.getCategories()) as Category[]
+    categories.value = await apiService.getCategories()
   } catch (err) {
     console.error('Error fetching categories:', err)
   }
 }
 
-const openAddEventModal = async () => {
+const fetchAll = () => Promise.all([fetchCategories(), fetchEventLists(), fetchEvents()])
+
+const openAddEventModal = () => {
   showAddEventModal.value = true
   formError.value = null
-  if (!eventLists.value.length) {
-    await fetchEventLists()
-  }
 }
 
 const closeAddEventModal = () => {
   showAddEventModal.value = false
   formError.value = null
-  newEventForm.value = {
-    title: '',
-    description: '',
-    start_date: '',
-    end_date: '',
-    event_list: '',
-    priroty: 'medium',
-  }
+  newEventForm.value = emptyEventForm()
 }
 
 const handleCreateEvent = async () => {
-  if (
-    !newEventForm.value.title ||
-    !newEventForm.value.start_date ||
-    !newEventForm.value.end_date ||
-    !newEventForm.value.event_list
-  ) {
+  const form = newEventForm.value
+  if (!form.title || !form.start_date || !form.end_date || !form.event_list) {
     formError.value = t('modals.addEvent.error')
     return
   }
 
-  if (new Date(newEventForm.value.end_date) < new Date(newEventForm.value.start_date)) {
+  if (new Date(form.end_date) < new Date(form.start_date)) {
     formError.value = t('modals.addEvent.dateOrderError')
     return
   }
@@ -186,34 +144,23 @@ const handleCreateEvent = async () => {
   formError.value = null
   try {
     await apiService.createEvent({
-      title: newEventForm.value.title,
-      description: newEventForm.value.description,
-      start_date: newEventForm.value.start_date,
-      end_date: newEventForm.value.end_date,
-      event_list: newEventForm.value.event_list,
-      priroty: newEventForm.value.priroty,
+      ...form,
+      event_list: form.event_list,
+      start_date: toIso(form.start_date),
+      end_date: toIso(form.end_date),
       notified: false,
     })
-
     await fetchEvents()
     closeAddEventModal()
   } catch (err) {
-    formError.value = err instanceof Error ? err.message : 'Failed to create event'
-    console.error('Error creating event:', err)
+    formError.value = errorMessage(err)
   } finally {
     formSubmitting.value = false
   }
 }
 
 const handleEventClick = (eventId: number) => {
-  sessionStorage.setItem('eventId', eventId.toString())
-  router.push({
-    name: 'event-detail',
-  })
-}
-
-const handleDateClick = (date: Date) => {
-  console.log('Date clicked:', date)
+  router.push({ name: 'event-detail', params: { id: eventId } })
 }
 
 const openCategoryModal = () => {
@@ -240,7 +187,7 @@ const handleCreateCategory = async () => {
     await fetchCategories()
     closeCategoryModal()
   } catch (err) {
-    categoryError.value = err instanceof Error ? err.message : 'Failed to create category'
+    categoryError.value = errorMessage(err)
   } finally {
     categorySubmitting.value = false
   }
@@ -255,12 +202,9 @@ const handleDeleteCategory = async (categoryId: number) => {
       selectedCategoryId.value = null
       selectedEventListId.value = null
     }
-
-    await fetchCategories()
-    await fetchEventLists()
-    await fetchEvents()
+    await fetchAll()
   } catch (err) {
-    console.error('Error deleting category:', err)
+    showNotification(t('dashboard.deleteCategory'), errorMessage(err), 'high')
   }
 }
 
@@ -272,11 +216,9 @@ const handleDeleteEventList = async (eventListId: number) => {
     if (selectedEventListId.value === eventListId) {
       selectedEventListId.value = null
     }
-
-    await fetchEventLists()
-    await fetchEvents()
+    await Promise.all([fetchEventLists(), fetchEvents()])
   } catch (err) {
-    console.error('Error deleting event list:', err)
+    showNotification(t('dashboard.deleteEventList'), errorMessage(err), 'high')
   }
 }
 
@@ -293,14 +235,12 @@ const handleExportSQLite = async () => {
   dbTransferLoading.value = true
   try {
     const blob = await apiService.exportSQLite()
-    const downloadUrl = window.URL.createObjectURL(blob)
+    const downloadUrl = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = downloadUrl
     anchor.download = buildSQLiteFileName()
-    document.body.appendChild(anchor)
     anchor.click()
-    anchor.remove()
-    window.URL.revokeObjectURL(downloadUrl)
+    URL.revokeObjectURL(downloadUrl)
 
     showNotification(t('dashboard.exportDatabase'), t('dashboard.exportDatabaseSuccess'), 'low')
   } catch (err) {
@@ -311,17 +251,10 @@ const handleExportSQLite = async () => {
   }
 }
 
-const triggerSQLiteImport = () => {
-  sqliteImportInput.value?.click()
-}
-
 const handleSQLiteImportSelected = async (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
-
-  if (!file) {
-    return
-  }
+  if (!file) return
 
   if (!confirm(t('dashboard.confirmImportDatabase'))) {
     input.value = ''
@@ -330,11 +263,8 @@ const handleSQLiteImportSelected = async (event: Event) => {
 
   dbTransferLoading.value = true
   try {
-    const response = (await apiService.importSQLite(file)) as { msg?: string; backup?: string }
-
-    await fetchCategories()
-    await fetchEventLists()
-    await fetchEvents()
+    const response = await apiService.importSQLite(file)
+    await fetchAll()
 
     const successMessage = response.backup
       ? `${t('dashboard.importDatabaseSuccess')} (${response.backup})`
@@ -362,7 +292,8 @@ const closeEventListModal = () => {
 }
 
 const handleCreateEventList = async () => {
-  if (!newEventListForm.value.title.trim() || !newEventListForm.value.category) {
+  const { title, category } = newEventListForm.value
+  if (!title.trim() || !category) {
     eventListError.value = t('modals.addEventList.error')
     return
   }
@@ -370,178 +301,107 @@ const handleCreateEventList = async () => {
   eventListSubmitting.value = true
   eventListError.value = null
   try {
-    await apiService.createEventList({
-      title: newEventListForm.value.title,
-      category: newEventListForm.value.category,
-    })
+    await apiService.createEventList({ title, category })
     closeEventListModal()
     await fetchEventLists()
   } catch (err) {
-    eventListError.value = err instanceof Error ? err.message : 'Failed to create event list'
+    eventListError.value = errorMessage(err)
   } finally {
     eventListSubmitting.value = false
   }
 }
 
-const getCategoryId = (eventList: EventList) =>
-  typeof eventList.category === 'number' ? eventList.category : eventList.category.id
-
-const getEventListId = (eventItem: EventItem) =>
-  typeof eventItem.event_list === 'number' ? eventItem.event_list : eventItem.event_list.id
-
-const getPriorityClass = (priority: Priority) => {
-  if (priority === 'high') return 'priority-chip-high'
-  if (priority === 'medium') return 'priority-chip-medium'
-  return 'priority-chip-low'
-}
-
-const getEventCellClass = (priority: Priority) => {
-  if (priority === 'high') return 'event-node-high-light'
-  if (priority === 'medium') return 'event-node-medium-light'
-  return 'event-node-low-light'
-}
-
+// Keep the two filters consistent: a list filter must belong to the selected category,
+// and picking a list selects its category.
 watch(selectedCategoryId, (categoryId) => {
-  if (!selectedEventListId.value) {
-    return
-  }
-
-  const isSelectedListValid = eventLists.value.some((list) => {
-    if (list.id !== selectedEventListId.value) {
-      return false
-    }
-    if (!categoryId) {
-      return true
-    }
-    return getCategoryId(list) === categoryId
-  })
-
-  if (!isSelectedListValid) {
+  const list = eventLists.value.find((l) => l.id === selectedEventListId.value)
+  if (list && categoryId && idOf(list.category) !== categoryId) {
     selectedEventListId.value = null
   }
 })
 
 watch(selectedEventListId, (eventListId) => {
-  if (!eventListId) {
-    return
-  }
-
-  const selectedList = eventLists.value.find((list) => list.id === eventListId)
-  if (!selectedList) {
-    return
-  }
-
-  const linkedCategoryId = getCategoryId(selectedList)
-  if (selectedCategoryId.value !== linkedCategoryId) {
-    selectedCategoryId.value = linkedCategoryId
-  }
+  const list = eventLists.value.find((l) => l.id === eventListId)
+  if (list) selectedCategoryId.value = idOf(list.category)
 })
 
-const formatDateRange = (startDate: string, endDate: string) => {
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  const localeCode = locale.value === 'ar' ? 'ar-DZ' : 'en-GB'
+const dateRangeFormatter = computed(
+  () =>
+    new Intl.DateTimeFormat(locale.value === 'ar' ? 'ar-DZ' : 'en-GB', {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }),
+)
 
-  const formatter = new Intl.DateTimeFormat(localeCode, {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-
-  return `${formatter.format(start)} - ${formatter.format(end)}`
-}
+const formatDateRange = (startDate: string, endDate: string) =>
+  `${dateRangeFormatter.value.format(new Date(startDate))} - ${dateRangeFormatter.value.format(new Date(endDate))}`
 
 const hierarchyData = computed(() => {
   const visibleCategories = selectedCategoryId.value
     ? categories.value.filter((cat) => cat.id === selectedCategoryId.value)
     : categories.value
 
-  const sortedCategories = [...visibleCategories].sort((a, b) => a.title.localeCompare(b.title))
-
-  return sortedCategories.map((category) => {
-    const lists = filteredEventLists.value
-      .filter((eventList) => getCategoryId(eventList) === category.id)
-      .sort((a, b) => a.title.localeCompare(b.title))
-      .map((eventList) => {
-        const listEvents = filteredEvents.value
-          .filter((eventItem) => getEventListId(eventItem) === eventList.id)
-          .sort(
-            (a, b) =>
-              new Date(a.start_date).getTime() - new Date(b.start_date).getTime(),
-          )
-
-        return {
-          ...eventList,
-          events: listEvents,
-        }
-      })
-
-    return {
-      ...category,
-      eventLists: lists,
-    }
-  })
+  return [...visibleCategories].sort(byTitle).map((category) => ({
+    ...category,
+    eventLists: filteredEventLists.value
+      .filter((eventList) => idOf(eventList.category) === category.id)
+      .sort(byTitle)
+      .map((eventList) => ({
+        ...eventList,
+        events: filteredEvents.value
+          .filter((eventItem) => idOf(eventItem.event_list) === eventList.id)
+          .sort((a, b) => a.start_date.localeCompare(b.start_date)),
+      })),
+  }))
 })
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
 const checkUpcomingEvents = () => {
+  const now = Date.now()
   events.value.forEach((event) => {
     if (event.notified) return
 
-    const eventDate = new Date(event.start_date)
-    const today = new Date()
-    const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    const daysUntil = Math.ceil((new Date(event.start_date).getTime() - now) / DAY_MS)
+    if (daysUntil <= 0 || daysUntil > PRIORITY_META[event.priroty].notifyDays) return
 
-    let notifyDays = 0
-    let notificationType = ''
-
-    if (event.priroty === 'high') {
-      notifyDays = 3
-      notificationType = 'high'
-    } else if (event.priroty === 'medium') {
-      notifyDays = 2
-      notificationType = 'medium'
-    } else if (event.priroty === 'low') {
-      notifyDays = 1
-      notificationType = 'low'
-    }
-
-    // Show notification if event is within the threshold and not yet notified
-    if (daysUntil <= notifyDays && daysUntil > 0) {
-      const notificationKey = `notifications.${notificationType}Priority`
-      const dayLabel = daysUntil > 1 ? t('notifications.days') : t('notifications.day')
-      const message = `${t(notificationKey)} ${daysUntil} ${dayLabel}`
-      showNotification(`${event.title}`, message, notificationType)
-      // Mark as notified in the backend
-      apiService.updateEvent(event.id, { ...event, notified: true }).catch((err) => {
-        console.error('Failed to update notified status:', err)
-      })
-    }
+    const dayLabel = daysUntil > 1 ? t('notifications.days') : t('notifications.day')
+    showNotification(
+      event.title,
+      `${t(`notifications.${event.priroty}Priority`)} ${daysUntil} ${dayLabel}`,
+      event.priroty,
+    )
+    // Mark locally too, so the hourly re-check doesn't notify again.
+    event.notified = true
+    apiService
+      .updateEvent(event.id, { ...event, event_list: idOf(event.event_list) })
+      .catch((err) => console.error('Failed to update notified status:', err))
   })
 }
 
-const showNotification = (title: string, message: string, type: string) => {
+const showNotification = (title: string, message: string, type: Priority) => {
   const id = `${Date.now()}-${Math.random()}`
   notifications.value.push({ id, title, message, type })
-
-  // Play notification sound
   playNotificationSound()
 
   setTimeout(() => {
     notifications.value = notifications.value.filter((n) => n.id !== id)
   }, 20000)
 
-  // Also show browser notification if permitted
   if ('Notification' in window && Notification.permission === 'granted') {
     new Notification(title, { body: message, tag: 'event-notification' })
   }
 }
 
+let audioContext: AudioContext | undefined
+
 const playNotificationSound = () => {
   try {
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    audioContext ??= new AudioContext()
     const oscillator = audioContext.createOscillator()
     const gainNode = audioContext.createGain()
 
@@ -561,33 +421,15 @@ const playNotificationSound = () => {
   }
 }
 
-const requestNotificationPermission = async () => {
-  if ('Notification' in window && Notification.permission === 'default') {
-    try {
-      await Notification.requestPermission()
-    } catch (err) {
-      console.error('Notification permission denied:', err)
-    }
-  }
-}
-
 onMounted(() => {
-  fetchEvents()
-  fetchEventLists()
-  fetchCategories()
-  requestNotificationPermission()
-
-  // Check for upcoming events every hour
-  const interval = setInterval(checkUpcomingEvents, 60 * 60 * 1000)
-  notificationTimeout.value = interval
-
-  // Cleanup on unmount
-  return () => {
-    if (notificationTimeout.value) {
-      clearInterval(notificationTimeout.value)
-    }
+  fetchAll()
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {})
   }
+  upcomingCheckInterval = setInterval(checkUpcomingEvents, 60 * 60 * 1000)
 })
+
+onUnmounted(() => clearInterval(upcomingCheckInterval))
 </script>
 
 <template>
@@ -612,23 +454,23 @@ onMounted(() => {
       </div>
       <div class="header-actions">
         <button class="btn-action btn-solid" @click="openAddEventModal">
-          <img :src="eventIcon" alt="Event" class="btn-icon" />
+          <img :src="eventIcon" alt="" class="btn-icon" />
           <span>+ {{ t('dashboard.addEvent') }}</span>
         </button>
         <button class="btn-action btn-outline" @click="openEventListModal">
-          <img :src="listIcon" alt="Event List" class="btn-icon" />
+          <img :src="listIcon" alt="" class="btn-icon" />
           <span>+ {{ t('dashboard.addEventList') }}</span>
         </button>
         <button class="btn-action btn-outline" @click="openCategoryModal">
-          <img :src="categoryIcon" alt="Category" class="btn-icon" />
+          <img :src="categoryIcon" alt="" class="btn-icon" />
           <span>+ {{ t('dashboard.addCategory') }}</span>
         </button>
         <button class="btn-action btn-outline" :disabled="dbTransferLoading" @click="handleExportSQLite">
-          <img :src="exportDbIcon" alt="Export" class="btn-icon" />
+          <img :src="exportDbIcon" alt="" class="btn-icon" />
           <span>{{ t('dashboard.exportDatabase') }}</span>
         </button>
-        <button class="btn-action btn-outline" :disabled="dbTransferLoading" @click="triggerSQLiteImport">
-          <img :src="importDbIcon" alt="Import" class="btn-icon" />
+        <button class="btn-action btn-outline" :disabled="dbTransferLoading" @click="sqliteImportInput?.click()">
+          <img :src="importDbIcon" alt="" class="btn-icon" />
           <span>{{ t('dashboard.importDatabase') }}</span>
         </button>
         <input
@@ -682,7 +524,6 @@ onMounted(() => {
         :events="filteredEvents"
         :loading="loading"
         @event-click="handleEventClick"
-        @date-click="handleDateClick"
       />
     </div>
 
@@ -734,12 +575,12 @@ onMounted(() => {
                 <li
                   v-for="eventItem in eventList.events"
                   :key="eventItem.id"
-                  :class="['event-node', getEventCellClass(eventItem.priroty)]"
+                  :class="['event-node', `event-node-${eventItem.priroty}-light`]"
                   @click="handleEventClick(eventItem.id)"
                 >
                   <div class="event-node-main">
                     <span class="event-node-title">{{ eventItem.title }}</span>
-                    <span :class="['priority-chip', getPriorityClass(eventItem.priroty)]">
+                    <span :class="['priority-chip', `priority-chip-${eventItem.priroty}`]">
                       {{ t('priority.' + eventItem.priroty) }}
                     </span>
                   </div>
@@ -756,35 +597,13 @@ onMounted(() => {
 
     <div class="stats-section">
       <div class="stat-card">
-        <PriorityMeter
-          :label="t('dashboard.totalEvents')"
-          :value="filteredEvents.length"
-          :total="filteredEvents.length > 0 ? filteredEvents.length : 1"
-          color="#3b82f6"
-        />
+        <PriorityMeter :label="t('dashboard.totalEvents')" :value="filteredEvents.length" color="#3b82f6" />
       </div>
-      <div class="stat-card">
+      <div v-for="p in [...PRIORITIES].reverse()" :key="p" class="stat-card">
         <PriorityMeter
-          :label="t('dashboard.highPriority')"
-          :value="highPriorityCount"
-          :total="filteredEvents.length"
-          color="#ef4444"
-        />
-      </div>
-      <div class="stat-card">
-        <PriorityMeter
-          :label="t('dashboard.mediumPriority')"
-          :value="mediumPriorityCount"
-          :total="filteredEvents.length"
-          color="#f59e0b"
-        />
-      </div>
-      <div class="stat-card">
-        <PriorityMeter
-          :label="t('dashboard.lowPriority')"
-          :value="lowPriorityCount"
-          :total="filteredEvents.length"
-          color="#10b981"
+          :label="t(`dashboard.${p}Priority`)"
+          :value="priorityCounts[p]"
+          :color="PRIORITY_META[p].color"
         />
       </div>
     </div>
@@ -833,9 +652,7 @@ onMounted(() => {
 
           <label class="form-label">{{ t('modals.addEvent.priorityLabel') }}</label>
           <select v-model="newEventForm.priroty" class="input">
-            <option value="low">{{ t('priority.low') }}</option>
-            <option value="medium">{{ t('priority.medium') }}</option>
-            <option value="high">{{ t('priority.high') }}</option>
+            <option v-for="p in PRIORITIES" :key="p" :value="p">{{ t('priority.' + p) }}</option>
           </select>
         </div>
 

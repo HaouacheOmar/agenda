@@ -1,18 +1,18 @@
 from django.urls import path
 from .views import (
-    EventAPIview,
-    EventHandlerAPIview,
-    EventListHandlerAPIview,
-    EventlistAPIview,
-    EventonlitAPIview,
-    EventPriorityAPIview
+    EventAPIView,
+    EventDetailAPIView,
+    EventListAPIView,
+    EventListDetailAPIView,
+    EventsByListAPIView,
+    EventsByPriorityAPIView,
 )
 
 urlpatterns = [
-    path('eventlists/',EventlistAPIview.as_view(),name='eventlist-list'),
-    path('eventlists/<int:pk>/', EventListHandlerAPIview.as_view(), name='eventlist-detail'),
-    path("events/", EventAPIview.as_view(), name="event-list"),
-    path("events/<int:pk>", EventHandlerAPIview.as_view(), name="event-detail"),
-    path("events/eventlist/<int:eventlist_id>", EventonlitAPIview.as_view(), name="event-by-eventlist"),
-    path("events/priority/", EventPriorityAPIview.as_view(), name="events-by-priority")
+    path('eventlists/', EventListAPIView.as_view(), name='eventlist-list'),
+    path('eventlists/<int:pk>/', EventListDetailAPIView.as_view(), name='eventlist-detail'),
+    path("events/", EventAPIView.as_view(), name="event-list"),
+    path("events/<int:pk>", EventDetailAPIView.as_view(), name="event-detail"),
+    path("events/eventlist/<int:eventlist_id>", EventsByListAPIView.as_view(), name="event-by-eventlist"),
+    path("events/priority/", EventsByPriorityAPIView.as_view(), name="events-by-priority"),
 ]

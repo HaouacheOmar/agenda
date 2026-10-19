@@ -1,16 +1,12 @@
 export default {
   dashboard: {
     title: 'لوحة تحكم الأجندة',
-    subtitle: 'إدارة الأحداث والأولويات',
-    newEvent: 'حدث جديد',
     totalEvents: 'عدد الأحداث الكلي',
     highPriority: 'أولوية عالية',
     mediumPriority: 'أولوية متوسطة',
     lowPriority: 'أولوية منخفضة',
-    loading: 'في قيد التحميل...',
     retry: 'إعادة المحاولة',
     error: 'فشل في تحميل الأحداث',
-    printPDF: 'طباعة PDF',
     addEvent: 'إضافة حدث',
     addEventList: 'قائمة الأحداث',
     addCategory: 'الفئة',
@@ -26,16 +22,12 @@ export default {
     confirmDeleteCategory: 'هل تريد حذف هذه الفئة وكل قوائمها وأحداثها؟',
     confirmDeleteEventList: 'هل تريد حذف قائمة الأحداث هذه وكل أحداثها؟',
     hierarchyTitle: 'هيكل الأحداث',
-    hierarchySubtitle:
-      'اضغط على الحدث لفتح التفاصيل. ألوان الأولوية: أحمر (عالية)، برتقالي (متوسطة)، أخضر (منخفضة).',
     hierarchyEmpty: 'لا توجد فئات لعرض التسلسل الهرمي.',
     noEventsInEventList: 'لا توجد أحداث في قائمة الأحداث هذه.',
   },
   filter: {
     label: 'تصفية حسب قائمة الأحداث:',
     allEvents: 'كل الأحداث',
-    loadingLists: 'في قيد تحميل قوائم الأحداث...',
-    error: 'فشل في تحميل قوائم الأحداث',
     categoryLabel: 'تصفية حسب الفئة:',
     allCategories: 'كل الفئات',
   },
@@ -82,7 +74,6 @@ export default {
     },
   },
   eventDetail: {
-    title: 'تفاصيل الحدث',
     back: 'رجوع',
     edit: 'تعديل',
     delete: 'حذف',
@@ -102,12 +93,8 @@ export default {
     notified: 'تم الإشعار',
     notNotified: 'لم يتم الإشعار',
     markAsNotified: 'وضع علامة كمُخطّر',
-    eventTitle: 'عنوان الحدث',
-    eventDescription: 'وصف الحدث',
     loadingEvent: 'في قيد تحميل تفاصيل الحدث...',
     eventNotFound: 'الحدث غير موجود',
-    updateSuccess: 'تم تحديث الحدث بنجاح',
-    deleteSuccess: 'تم حذف الحدث بنجاح',
   },
   priority: {
     low: 'منخفضة',
@@ -122,27 +109,8 @@ export default {
     days: 'أيام',
   },
   common: {
+    switchLanguage: 'تغيير اللغة',
     retry: 'إعادة المحاولة',
-    loading: 'في قيد التحميل...',
     error: 'حدث خطأ',
-  },
-  pages: {
-    events: {
-      title: 'الأحداث',
-      description: 'يعرض جميع الأحداث من مسار API: /events',
-    },
-    eventLists: {
-      title: 'قوائم الأحداث',
-      description: 'يعرض جميع قوائم الأحداث من مسار API: /eventlists',
-    },
-    eventsByList: {
-      title: 'الأحداث حسب قائمة الأحداث',
-      idLabel: 'معرف قائمة الأحداث',
-      description: 'مسار API: /events/eventlist/:eventlist_id',
-    },
-    eventsByPriority: {
-      title: 'الأحداث حسب الأولوية',
-      description: 'مسار API: /events/priority',
-    },
   },
 }

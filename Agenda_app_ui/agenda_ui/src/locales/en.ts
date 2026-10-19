@@ -1,16 +1,12 @@
 export default {
   dashboard: {
     title: 'Agenda Dashboard',
-    subtitle: 'Manage your events and priorities',
-    newEvent: 'New Event',
     totalEvents: 'Total Events',
     highPriority: 'High Priority',
     mediumPriority: 'Medium Priority',
     lowPriority: 'Low Priority',
-    loading: 'Loading...',
     retry: 'Retry',
     error: 'Failed to fetch events',
-    printPDF: 'Print PDF',
     addEvent: 'Add Event',
     addEventList: 'Event List',
     addCategory: 'Category',
@@ -28,15 +24,12 @@ export default {
       'Delete this category and all its event lists and events?',
     confirmDeleteEventList: 'Delete this event list and all its events?',
     hierarchyTitle: 'Event Hierarchy',
-    hierarchySubtitle: 'Click an event to open details. Priority colors: red (high), orange (medium), green (low).',
     hierarchyEmpty: 'No categories available to display hierarchy.',
     noEventsInEventList: 'No events in this event list.',
   },
   filter: {
     label: 'Filter by Event List:',
     allEvents: 'All Events',
-    loadingLists: 'Loading event lists...',
-    error: 'Failed to fetch event lists',
     categoryLabel: 'Filter by Category:',
     allCategories: 'All Categories',
   },
@@ -83,7 +76,6 @@ export default {
     },
   },
   eventDetail: {
-    title: 'Event Detail',
     back: 'Back',
     edit: 'Edit',
     delete: 'Delete',
@@ -104,12 +96,8 @@ export default {
     notified: 'Notified',
     notNotified: 'Not Notified',
     markAsNotified: 'Mark as notified',
-    eventTitle: 'Event Title',
-    eventDescription: 'Event description',
     loadingEvent: 'Loading event details...',
     eventNotFound: 'Event not found',
-    updateSuccess: 'Event updated successfully',
-    deleteSuccess: 'Event deleted successfully',
   },
   priority: {
     low: 'Low',
@@ -124,27 +112,8 @@ export default {
     days: 'days',
   },
   common: {
+    switchLanguage: 'Switch language',
     retry: 'Retry',
-    loading: 'Loading...',
     error: 'An error occurred',
-  },
-  pages: {
-    events: {
-      title: 'Events',
-      description: 'Shows all events from the API route: /events',
-    },
-    eventLists: {
-      title: 'Event Lists',
-      description: 'Shows all event lists from the API route: /eventlists',
-    },
-    eventsByList: {
-      title: 'Events by Event List',
-      idLabel: 'Event list id',
-      description: 'API route: /events/eventlist/:eventlist_id',
-    },
-    eventsByPriority: {
-      title: 'Events by Priority',
-      description: 'API route: /events/priority',
-    },
   },
 }
