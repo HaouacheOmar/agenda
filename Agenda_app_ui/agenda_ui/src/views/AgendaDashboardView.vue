@@ -2,14 +2,21 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { AnimatePresence, motion } from 'motion-v'
+import {
+  CalendarDays,
+  CalendarPlus,
+  ChevronRight,
+  Download,
+  FolderPlus,
+  ListPlus,
+  Trash2,
+  Upload,
+} from '@lucide/vue'
 import FullCalendar from '../components/FullCalendar.vue'
 import PriorityMeter from '../components/PriorityMeter.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
-import eventIcon from '../assets/event-edit-svgrepo-com.svg'
-import listIcon from '../assets/list-svgrepo-com.svg'
-import categoryIcon from '../assets/category-svgrepo-com.svg'
-import importDbIcon from '../assets/import-db.svg'
-import exportDbIcon from '../assets/export-db.svg'
+import BaseModal from '../components/BaseModal.vue'
 import apiService from '../services/api'
 import { PRIORITIES, PRIORITY_META, idOf, toIso } from '../types/agenda'
 import type { EventItem, EventList, Priority, Category } from '../types/agenda'
@@ -337,8 +344,9 @@ const dateRangeFormatter = computed(
     }),
 )
 
+// formatRange collapses shared parts: "16 Oct 2026, 18:00 – 19:00".
 const formatDateRange = (startDate: string, endDate: string) =>
-  `${dateRangeFormatter.value.format(new Date(startDate))} - ${dateRangeFormatter.value.format(new Date(endDate))}`
+  dateRangeFormatter.value.formatRange(new Date(startDate), new Date(endDate))
 
 const hierarchyData = computed(() => {
   const visibleCategories = selectedCategoryId.value
@@ -421,6 +429,16 @@ const playNotificationSound = () => {
   }
 }
 
+// +1 in LTR, -1 in RTL: horizontal slide-ins come from the inline-end side.
+const inlineDir = computed(() => (locale.value === 'ar' ? -1 : 1))
+
+// Bento tiles fade up one after another on first paint.
+const tileEnter = (index: number) => ({
+  initial: { opacity: 0, y: 18 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.45, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] as const },
+})
+
 onMounted(() => {
   fetchAll()
   if ('Notification' in window && Notification.permission === 'default') {
@@ -434,323 +452,329 @@ onUnmounted(() => clearInterval(upcomingCheckInterval))
 
 <template>
   <main class="dashboard">
-    <!-- Notifications Container -->
-    <div class="notifications-container">
-      <div
-        v-for="notification in notifications"
-        :key="notification.id"
-        :class="['notification', `notification-${notification.type}`]"
-      >
-        <div class="notification-header">
-          <h4>{{ notification.title }}</h4>
-        </div>
-        <p class="notification-message">{{ notification.message }}</p>
-      </div>
+    <!-- Toasts -->
+    <div class="toast-stack" aria-live="polite">
+      <AnimatePresence>
+        <motion.div
+          v-for="notification in notifications"
+          :key="notification.id"
+          layout
+          :class="['toast', `toast-${notification.type}`]"
+          role="status"
+          :initial="{ opacity: 0, x: 40 * inlineDir, scale: 0.96 }"
+          :animate="{ opacity: 1, x: 0, scale: 1 }"
+          :exit="{ opacity: 0, scale: 0.96, transition: { duration: 0.15 } }"
+          :transition="{ type: 'spring', bounce: 0.2, visualDuration: 0.4 }"
+        >
+          <span class="toast-dot" aria-hidden="true"></span>
+          <div>
+            <h4>{{ notification.title }}</h4>
+            <p>{{ notification.message }}</p>
+          </div>
+        </motion.div>
+      </AnimatePresence>
     </div>
 
-    <div class="dashboard-header">
-      <div>
-        <h1>{{ t('dashboard.title') }}</h1>
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><CalendarDays :size="22" /></span>
+        <div>
+          <h1>{{ t('dashboard.title') }}</h1>
+          <p class="brand-tagline">{{ t('dashboard.tagline') }}</p>
+        </div>
       </div>
-      <div class="header-actions">
-        <button class="btn-action btn-solid" @click="openAddEventModal">
-          <img :src="eventIcon" alt="" class="btn-icon" />
-          <span>+ {{ t('dashboard.addEvent') }}</span>
+
+      <div class="topbar-actions">
+        <LanguageSwitcher />
+        <button
+          class="btn btn-ghost btn-icon"
+          type="button"
+          :title="t('dashboard.exportDatabase')"
+          :aria-label="t('dashboard.exportDatabase')"
+          :disabled="dbTransferLoading"
+          @click="handleExportSQLite"
+        >
+          <Download :size="18" aria-hidden="true" />
         </button>
-        <button class="btn-action btn-outline" @click="openEventListModal">
-          <img :src="listIcon" alt="" class="btn-icon" />
-          <span>+ {{ t('dashboard.addEventList') }}</span>
-        </button>
-        <button class="btn-action btn-outline" @click="openCategoryModal">
-          <img :src="categoryIcon" alt="" class="btn-icon" />
-          <span>+ {{ t('dashboard.addCategory') }}</span>
-        </button>
-        <button class="btn-action btn-outline" :disabled="dbTransferLoading" @click="handleExportSQLite">
-          <img :src="exportDbIcon" alt="" class="btn-icon" />
-          <span>{{ t('dashboard.exportDatabase') }}</span>
-        </button>
-        <button class="btn-action btn-outline" :disabled="dbTransferLoading" @click="sqliteImportInput?.click()">
-          <img :src="importDbIcon" alt="" class="btn-icon" />
-          <span>{{ t('dashboard.importDatabase') }}</span>
+        <button
+          class="btn btn-ghost btn-icon"
+          type="button"
+          :title="t('dashboard.importDatabase')"
+          :aria-label="t('dashboard.importDatabase')"
+          :disabled="dbTransferLoading"
+          @click="sqliteImportInput?.click()"
+        >
+          <Upload :size="18" aria-hidden="true" />
         </button>
         <input
           ref="sqliteImportInput"
           type="file"
           accept=".sqlite3,.sqlite,.db,application/x-sqlite3"
-          class="hidden-file-input"
+          hidden
           @change="handleSQLiteImportSelected"
         />
+        <button class="btn btn-secondary" type="button" @click="openCategoryModal">
+          <FolderPlus :size="18" aria-hidden="true" />
+          <span>{{ t('dashboard.addCategory') }}</span>
+        </button>
+        <button class="btn btn-secondary" type="button" @click="openEventListModal">
+          <ListPlus :size="18" aria-hidden="true" />
+          <span>{{ t('dashboard.addEventList') }}</span>
+        </button>
+        <button class="btn btn-primary" type="button" @click="openAddEventModal">
+          <CalendarPlus :size="18" aria-hidden="true" />
+          <span>{{ t('dashboard.addEvent') }}</span>
+        </button>
       </div>
-    </div>
+    </header>
 
-    <div class="dashboard-toolbar">
-      <div class="linked-filters">
-        <div class="filter-field">
-          <label for="dashboard-category-filter">{{ t('filter.categoryLabel') }}</label>
-          <select id="dashboard-category-filter" v-model="selectedCategoryValue" class="filter-select">
-            <option value="">{{ t('filter.allCategories') }}</option>
-            <option v-for="cat in categories" :key="cat.id" :value="String(cat.id)">
-              {{ cat.title }}
-            </option>
-          </select>
-        </div>
-
-        <div class="filter-field">
-          <label for="dashboard-eventlist-filter">{{ t('filter.label') }}</label>
-          <select
-            id="dashboard-eventlist-filter"
-            v-model="selectedEventListValue"
-            class="filter-select"
-            :disabled="!filteredEventLists.length"
-          >
-            <option value="">{{ t('filter.allEvents') }}</option>
-            <option v-for="list in filteredEventLists" :key="list.id" :value="String(list.id)">
-              {{ list.title }}
-            </option>
-          </select>
-        </div>
-      </div>
-
-      <LanguageSwitcher />
-    </div>
-
-    <div v-if="error" class="alert alert-error">
+    <p v-if="error" class="alert-error" role="alert">
       {{ error }}
-      <button @click="fetchEvents" class="btn-retry">{{ t('dashboard.retry') }}</button>
-    </div>
+      <button class="btn btn-secondary" type="button" @click="fetchEvents">{{ t('dashboard.retry') }}</button>
+    </p>
 
-    <div class="calendar-section">
-      <FullCalendar
-        :events="filteredEvents"
-        :loading="loading"
-        @event-click="handleEventClick"
-      />
-    </div>
-
-    <section class="hierarchy-section">
-      <h2>{{ t('dashboard.hierarchyTitle') }}</h2>
-
-      <div v-if="!hierarchyData.length" class="hierarchy-empty">
-        {{ t('dashboard.hierarchyEmpty') }}
-      </div>
-
-      <ul v-else class="category-tree">
-        <li v-for="category in hierarchyData" :key="category.id" class="category-node">
-          <div class="category-node-header">
-            <h3>{{ category.title }}</h3>
-            <div class="node-actions">
-              <button
-                class="btn-node-delete"
-                type="button"
-                @click.stop="handleDeleteCategory(category.id)"
-              >
-                {{ t('dashboard.deleteCategory') }}
-              </button>
-              <span class="category-node-arrow">›</span>
-            </div>
-          </div>
-
-          <ul class="event-list-tree">
-            <li
-              v-for="eventList in category.eventLists"
-              :key="eventList.id"
-              class="event-list-node"
-            >
-              <div class="event-list-header">
-                <h4>{{ eventList.title }}</h4>
-                <button
-                  class="btn-node-delete"
-                  type="button"
-                  @click.stop="handleDeleteEventList(eventList.id)"
-                >
-                  {{ t('dashboard.deleteEventList') }}
-                </button>
-              </div>
-
-              <p v-if="!eventList.events.length" class="tree-empty">
-                {{ t('dashboard.noEventsInEventList') }}
-              </p>
-
-              <ul v-else class="event-tree">
-                <li
-                  v-for="eventItem in eventList.events"
-                  :key="eventItem.id"
-                  :class="['event-node', `event-node-${eventItem.priroty}-light`]"
-                  @click="handleEventClick(eventItem.id)"
-                >
-                  <div class="event-node-main">
-                    <span class="event-node-title">{{ eventItem.title }}</span>
-                    <span :class="['priority-chip', `priority-chip-${eventItem.priroty}`]">
-                      {{ t('priority.' + eventItem.priroty) }}
-                    </span>
-                  </div>
-                  <p class="event-node-dates">
-                    {{ formatDateRange(eventItem.start_date, eventItem.end_date) }}
-                  </p>
-                </li>
-              </ul>
-            </li>
-          </ul>
-        </li>
-      </ul>
-    </section>
-
-    <div class="stats-section">
-      <div class="stat-card">
-        <PriorityMeter :label="t('dashboard.totalEvents')" :value="filteredEvents.length" color="#3b82f6" />
-      </div>
-      <div v-for="p in [...PRIORITIES].reverse()" :key="p" class="stat-card">
+    <section class="bento">
+      <!-- KPI tiles -->
+      <motion.div class="card tile tile-kpi tile-total" v-bind="tileEnter(0)">
+        <PriorityMeter
+          :label="t('dashboard.totalEvents')"
+          :value="filteredEvents.length"
+          :total="filteredEvents.length"
+          color="#22d3ee"
+        />
+      </motion.div>
+      <motion.div
+        v-for="(p, i) in [...PRIORITIES].reverse()"
+        :key="p"
+        class="card tile tile-kpi"
+        v-bind="tileEnter(i + 1)"
+      >
         <PriorityMeter
           :label="t(`dashboard.${p}Priority`)"
           :value="priorityCounts[p]"
+          :total="filteredEvents.length"
           :color="PRIORITY_META[p].color"
         />
+      </motion.div>
+
+      <!-- Calendar -->
+      <motion.div class="card tile tile-calendar" v-bind="tileEnter(4)">
+        <div class="filters">
+          <div class="field">
+            <label class="field-label" for="dashboard-category-filter">{{ t('filter.categoryLabel') }}</label>
+            <select id="dashboard-category-filter" v-model="selectedCategoryValue" class="input">
+              <option value="">{{ t('filter.allCategories') }}</option>
+              <option v-for="cat in categories" :key="cat.id" :value="String(cat.id)">{{ cat.title }}</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="dashboard-eventlist-filter">{{ t('filter.label') }}</label>
+            <select
+              id="dashboard-eventlist-filter"
+              v-model="selectedEventListValue"
+              class="input"
+              :disabled="!filteredEventLists.length"
+            >
+              <option value="">{{ t('filter.allEvents') }}</option>
+              <option v-for="list in filteredEventLists" :key="list.id" :value="String(list.id)">
+                {{ list.title }}
+              </option>
+            </select>
+          </div>
+        </div>
+        <FullCalendar :events="filteredEvents" :loading="loading" @event-click="handleEventClick" />
+      </motion.div>
+
+      <!-- Hierarchy -->
+      <motion.section class="card tile tile-hierarchy" v-bind="tileEnter(5)" aria-labelledby="hierarchy-title">
+        <h2 id="hierarchy-title" class="tile-title">{{ t('dashboard.hierarchyTitle') }}</h2>
+
+        <p v-if="!hierarchyData.length" class="empty">{{ t('dashboard.hierarchyEmpty') }}</p>
+
+        <ul v-else class="tree">
+          <li v-for="category in hierarchyData" :key="category.id" class="tree-category">
+            <div class="tree-row">
+              <h3>{{ category.title }}</h3>
+              <button
+                class="btn btn-ghost btn-icon-sm btn-icon-danger"
+                type="button"
+                :title="t('dashboard.deleteCategory')"
+                :aria-label="`${t('dashboard.deleteCategory')}: ${category.title}`"
+                @click="handleDeleteCategory(category.id)"
+              >
+                <Trash2 :size="16" aria-hidden="true" />
+              </button>
+            </div>
+
+            <ul class="tree-lists">
+              <li v-for="eventList in category.eventLists" :key="eventList.id" class="tree-list">
+                <div class="tree-row">
+                  <h4>{{ eventList.title }}</h4>
+                  <button
+                    class="btn btn-ghost btn-icon-sm btn-icon-danger"
+                    type="button"
+                    :title="t('dashboard.deleteEventList')"
+                    :aria-label="`${t('dashboard.deleteEventList')}: ${eventList.title}`"
+                    @click="handleDeleteEventList(eventList.id)"
+                  >
+                    <Trash2 :size="15" aria-hidden="true" />
+                  </button>
+                </div>
+
+                <p v-if="!eventList.events.length" class="empty">{{ t('dashboard.noEventsInEventList') }}</p>
+
+                <ul v-else class="tree-events">
+                  <motion.li
+                    v-for="(eventItem, i) in eventList.events"
+                    :key="eventItem.id"
+                    :initial="{ opacity: 0, x: -8 * inlineDir }"
+                    :animate="{ opacity: 1, x: 0 }"
+                    :transition="{ duration: 0.3, delay: 0.3 + i * 0.04 }"
+                  >
+                    <button
+                      :class="['event-row', `event-row-${eventItem.priroty}`]"
+                      type="button"
+                      @click="handleEventClick(eventItem.id)"
+                    >
+                      <span class="event-row-main">
+                        <span class="event-row-title">{{ eventItem.title }}</span>
+                        <span class="event-row-dates">{{ formatDateRange(eventItem.start_date, eventItem.end_date) }}</span>
+                      </span>
+                      <span :class="['badge', `badge-${eventItem.priroty}`]">{{ t('priority.' + eventItem.priroty) }}</span>
+                      <ChevronRight :size="16" class="event-row-chevron" aria-hidden="true" />
+                    </button>
+                  </motion.li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </motion.section>
+    </section>
+
+    <!-- Add event -->
+    <BaseModal
+      :open="showAddEventModal"
+      :title="t('modals.addEvent.title')"
+      :error="formError"
+      @close="closeAddEventModal"
+    >
+      <div class="field">
+        <label class="field-label" for="new-event-title">{{ t('modals.addEvent.titleLabel') }}</label>
+        <input
+          id="new-event-title"
+          v-model="newEventForm.title"
+          type="text"
+          class="input"
+          :placeholder="t('modals.addEvent.titlePlaceholder')"
+        />
       </div>
-    </div>
-
-    <div v-if="showAddEventModal" class="modal-overlay" @click="closeAddEventModal">
-      <div class="modal" @click.stop>
-        <div class="modal-header">
-          <h2>{{ t('modals.addEvent.title') }}</h2>
-          <button class="modal-close" @click="closeAddEventModal">×</button>
+      <div class="field">
+        <label class="field-label" for="new-event-description">{{ t('modals.addEvent.descriptionLabel') }}</label>
+        <textarea
+          id="new-event-description"
+          v-model="newEventForm.description"
+          class="input"
+          rows="3"
+          :placeholder="t('modals.addEvent.descriptionPlaceholder')"
+        ></textarea>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label class="field-label" for="new-event-start">{{ t('modals.addEvent.startDateLabel') }}</label>
+          <input id="new-event-start" v-model="newEventForm.start_date" type="datetime-local" class="input" />
         </div>
-
-        <div v-if="formError" class="alert alert-error">
-          {{ formError }}
+        <div class="field">
+          <label class="field-label" for="new-event-end">{{ t('modals.addEvent.endDateLabel') }}</label>
+          <input id="new-event-end" v-model="newEventForm.end_date" type="datetime-local" class="input" />
         </div>
-
-        <div class="modal-body">
-          <label class="form-label">{{ t('modals.addEvent.titleLabel') }}</label>
-          <input
-            v-model="newEventForm.title"
-            type="text"
-            class="input"
-            :placeholder="t('modals.addEvent.titlePlaceholder')"
-          />
-
-          <label class="form-label">{{ t('modals.addEvent.descriptionLabel') }}</label>
-          <textarea
-            v-model="newEventForm.description"
-            class="input textarea"
-            rows="3"
-            :placeholder="t('modals.addEvent.descriptionPlaceholder')"
-          ></textarea>
-
-          <label class="form-label">{{ t('modals.addEvent.startDateLabel') }}</label>
-          <input v-model="newEventForm.start_date" type="datetime-local" class="input" />
-
-          <label class="form-label">{{ t('modals.addEvent.endDateLabel') }}</label>
-          <input v-model="newEventForm.end_date" type="datetime-local" class="input" />
-
-          <label class="form-label">{{ t('modals.addEvent.eventListLabel') }}</label>
-          <select v-model="newEventForm.event_list" class="input">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label class="field-label" for="new-event-list">{{ t('modals.addEvent.eventListLabel') }}</label>
+          <select id="new-event-list" v-model="newEventForm.event_list" class="input">
             <option value="" disabled>{{ t('modals.addEvent.eventListPlaceholder') }}</option>
-            <option v-for="list in eventLists" :key="list.id" :value="list.id">
-              {{ list.title }}
-            </option>
+            <option v-for="list in eventLists" :key="list.id" :value="list.id">{{ list.title }}</option>
           </select>
-
-          <label class="form-label">{{ t('modals.addEvent.priorityLabel') }}</label>
-          <select v-model="newEventForm.priroty" class="input">
+        </div>
+        <div class="field">
+          <label class="field-label" for="new-event-priority">{{ t('modals.addEvent.priorityLabel') }}</label>
+          <select id="new-event-priority" v-model="newEventForm.priroty" class="input">
             <option v-for="p in PRIORITIES" :key="p" :value="p">{{ t('priority.' + p) }}</option>
           </select>
         </div>
-
-        <div class="modal-actions">
-          <button class="btn-secondary" @click="closeAddEventModal" :disabled="formSubmitting">
-            {{ t('modals.addEvent.cancel') }}
-          </button>
-          <button class="btn-primary" @click="handleCreateEvent" :disabled="formSubmitting">
-            {{ formSubmitting ? t('modals.addEvent.saving') : t('modals.addEvent.create') }}
-          </button>
-        </div>
       </div>
-    </div>
+      <template #actions>
+        <button class="btn btn-secondary" type="button" :disabled="formSubmitting" @click="closeAddEventModal">
+          {{ t('modals.addEvent.cancel') }}
+        </button>
+        <button class="btn btn-primary" type="button" :disabled="formSubmitting" @click="handleCreateEvent">
+          {{ formSubmitting ? t('modals.addEvent.saving') : t('modals.addEvent.create') }}
+        </button>
+      </template>
+    </BaseModal>
 
-    <div v-if="showCategoryModal" class="modal-overlay" @click="closeCategoryModal">
-      <div class="modal" @click.stop>
-        <div class="modal-header">
-          <h2>{{ t('modals.addCategory.title') }}</h2>
-          <button class="modal-close" @click="closeCategoryModal">×</button>
-        </div>
-
-        <div v-if="categoryError" class="alert alert-error">
-          {{ categoryError }}
-        </div>
-
-        <div class="modal-body">
-          <label class="form-label">{{ t('modals.addCategory.titleLabel') }}</label>
-          <input
-            v-model="newCategoryForm.title"
-            type="text"
-            class="input"
-            :placeholder="t('modals.addCategory.titlePlaceholder')"
-          />
-        </div>
-
-        <div class="modal-actions">
-          <button class="btn-secondary" @click="closeCategoryModal" :disabled="categorySubmitting">
-            {{ t('modals.addCategory.cancel') }}
-          </button>
-          <button class="btn-primary" @click="handleCreateCategory" :disabled="categorySubmitting">
-            {{
-              categorySubmitting ? t('modals.addCategory.creating') : t('modals.addCategory.create')
-            }}
-          </button>
-        </div>
+    <!-- Add category -->
+    <BaseModal
+      :open="showCategoryModal"
+      :title="t('modals.addCategory.title')"
+      :error="categoryError"
+      @close="closeCategoryModal"
+    >
+      <div class="field">
+        <label class="field-label" for="new-category-title">{{ t('modals.addCategory.titleLabel') }}</label>
+        <input
+          id="new-category-title"
+          v-model="newCategoryForm.title"
+          type="text"
+          class="input"
+          :placeholder="t('modals.addCategory.titlePlaceholder')"
+          @keyup.enter="handleCreateCategory"
+        />
       </div>
-    </div>
+      <template #actions>
+        <button class="btn btn-secondary" type="button" :disabled="categorySubmitting" @click="closeCategoryModal">
+          {{ t('modals.addCategory.cancel') }}
+        </button>
+        <button class="btn btn-primary" type="button" :disabled="categorySubmitting" @click="handleCreateCategory">
+          {{ categorySubmitting ? t('modals.addCategory.creating') : t('modals.addCategory.create') }}
+        </button>
+      </template>
+    </BaseModal>
 
-    <div v-if="showEventListModal" class="modal-overlay" @click="closeEventListModal">
-      <div class="modal" @click.stop>
-        <div class="modal-header">
-          <h2>{{ t('modals.addEventList.title') }}</h2>
-          <button class="modal-close" @click="closeEventListModal">×</button>
-        </div>
-
-        <div v-if="eventListError" class="alert alert-error">
-          {{ eventListError }}
-        </div>
-
-        <div class="modal-body">
-          <label class="form-label">{{ t('modals.addEventList.titleLabel') }}</label>
-          <input
-            v-model="newEventListForm.title"
-            type="text"
-            class="input"
-            :placeholder="t('modals.addEventList.titlePlaceholder')"
-          />
-
-          <label class="form-label">{{ t('modals.addEventList.categoryLabel') }}</label>
-          <select v-model="newEventListForm.category" class="input">
-            <option value="" disabled>{{ t('modals.addEventList.categoryPlaceholder') }}</option>
-            <option v-for="cat in categories" :key="cat.id" :value="cat.id">
-              {{ cat.title }}
-            </option>
-          </select>
-        </div>
-
-        <div class="modal-actions">
-          <button
-            class="btn-secondary"
-            @click="closeEventListModal"
-            :disabled="eventListSubmitting"
-          >
-            {{ t('modals.addEventList.cancel') }}
-          </button>
-          <button
-            class="btn-primary"
-            @click="handleCreateEventList"
-            :disabled="eventListSubmitting"
-          >
-            {{
-              eventListSubmitting
-                ? t('modals.addEventList.creating')
-                : t('modals.addEventList.create')
-            }}
-          </button>
-        </div>
+    <!-- Add event list -->
+    <BaseModal
+      :open="showEventListModal"
+      :title="t('modals.addEventList.title')"
+      :error="eventListError"
+      @close="closeEventListModal"
+    >
+      <div class="field">
+        <label class="field-label" for="new-list-title">{{ t('modals.addEventList.titleLabel') }}</label>
+        <input
+          id="new-list-title"
+          v-model="newEventListForm.title"
+          type="text"
+          class="input"
+          :placeholder="t('modals.addEventList.titlePlaceholder')"
+        />
       </div>
-    </div>
+      <div class="field">
+        <label class="field-label" for="new-list-category">{{ t('modals.addEventList.categoryLabel') }}</label>
+        <select id="new-list-category" v-model="newEventListForm.category" class="input">
+          <option value="" disabled>{{ t('modals.addEventList.categoryPlaceholder') }}</option>
+          <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.title }}</option>
+        </select>
+      </div>
+      <template #actions>
+        <button class="btn btn-secondary" type="button" :disabled="eventListSubmitting" @click="closeEventListModal">
+          {{ t('modals.addEventList.cancel') }}
+        </button>
+        <button class="btn btn-primary" type="button" :disabled="eventListSubmitting" @click="handleCreateEventList">
+          {{ eventListSubmitting ? t('modals.addEventList.creating') : t('modals.addEventList.create') }}
+        </button>
+      </template>
+    </BaseModal>
   </main>
 </template>

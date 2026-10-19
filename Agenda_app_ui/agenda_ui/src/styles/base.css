@@ -1,0 +1,297 @@
+/* Dark bento design system */
+:root {
+  --color-bg: #080a14;
+  --color-card: #12152a;
+  --color-card-hover: #171b33;
+  --color-elevated: #1a1e3a;
+  --color-fg: #eceefa;
+  --color-muted-fg: #a3a8c3;
+  --color-subtle-fg: #7a809e;
+  --color-border: rgba(255, 255, 255, 0.07);
+  --color-border-strong: rgba(255, 255, 255, 0.14);
+
+  --color-primary: #7c5cff;
+  --color-primary-hover: #8f74ff;
+  --color-accent: #22d3ee;
+  --gradient-brand: linear-gradient(135deg, #7c5cff 0%, #22d3ee 100%);
+  --color-ring: #a78bfa;
+
+  --color-destructive: #ff5c7a;
+  --color-destructive-soft: rgba(255, 92, 122, 0.12);
+
+  --priority-high: #ff5c7a;
+  --priority-high-soft: rgba(255, 92, 122, 0.14);
+  --priority-medium: #fbbf24;
+  --priority-medium-soft: rgba(251, 191, 36, 0.14);
+  --priority-low: #34d399;
+  --priority-low-soft: rgba(52, 211, 153, 0.14);
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --shadow-lg: 0 30px 60px rgba(0, 0, 0, 0.55);
+
+  --font-heading: 'Outfit', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-body: 'Work Sans', 'IBM Plex Sans Arabic', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  color-scheme: dark;
+}
+
+[lang='ar'] {
+  --font-heading: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+}
+
+html {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--color-fg);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 500px at 0% -10%, rgba(124, 92, 255, 0.18), transparent 60%),
+    radial-gradient(700px 400px at 100% 0%, rgba(34, 211, 238, 0.1), transparent 60%),
+    var(--color-bg);
+  background-attachment: fixed;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-family: var(--font-heading);
+  letter-spacing: -0.01em;
+}
+
+p {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--ease-out),
+    border-color 150ms var(--ease-out),
+    color 150ms var(--ease-out),
+    box-shadow 200ms var(--ease-out);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--gradient-brand);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(124, 92, 255, 0.35);
+}
+
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 10px 30px rgba(124, 92, 255, 0.55);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--color-border-strong);
+  color: var(--color-fg);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-muted-fg);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--color-fg);
+}
+
+.btn-danger {
+  background: var(--color-destructive);
+  color: #1a0710;
+  font-weight: 600;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #ff7a93;
+}
+
+.btn-icon {
+  width: 42px;
+  padding: 0;
+}
+
+.btn-icon-sm {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.btn-icon-danger:hover:not(:disabled) {
+  background: var(--color-destructive-soft);
+  color: var(--color-destructive);
+}
+
+/* Cards */
+.card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+/* Form fields */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-muted-fg);
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 15px;
+  transition:
+    border-color 150ms var(--ease-out),
+    box-shadow 150ms var(--ease-out);
+}
+
+.input:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.25);
+}
+
+select.input option {
+  background: var(--color-elevated);
+}
+
+input[type='datetime-local'].input::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+}
+
+textarea.input {
+  resize: vertical;
+  min-height: 96px;
+}
+
+/* Priority badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.badge-high {
+  color: var(--priority-high);
+  background: var(--priority-high-soft);
+}
+
+.badge-medium {
+  color: var(--priority-medium);
+  background: var(--priority-medium-soft);
+}
+
+.badge-low {
+  color: var(--priority-low);
+  background: var(--priority-low-soft);
+}
+
+.alert-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-destructive-soft);
+  border: 1px solid rgba(255, 92, 122, 0.35);
+  color: #ffb3c1;
+  font-size: 14px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

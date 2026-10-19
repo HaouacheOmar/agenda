@@ -1,18 +1,19 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import { MotionConfig } from 'motion-v'
+import './styles/base.css'
+</script>
 
 <template>
-  <router-view />
+  <!-- reducedMotion="user": honour the OS "reduce motion" setting for every animation -->
+  <MotionConfig reduced-motion="user">
+    <router-view />
+  </MotionConfig>
 </template>
 
 <style>
-html,
-body,
-#app {
-  margin: 0;
-  min-height: 100%;
-}
-
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 </style>

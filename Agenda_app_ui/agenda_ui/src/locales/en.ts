@@ -1,5 +1,6 @@
 export default {
   dashboard: {
+    tagline: 'Plan, prioritise and never miss an event.',
     title: 'Agenda Dashboard',
     totalEvents: 'Total Events',
     highPriority: 'High Priority',
@@ -112,6 +113,7 @@ export default {
     days: 'days',
   },
   common: {
+    close: 'Close',
     switchLanguage: 'Switch language',
     retry: 'Retry',
     error: 'An error occurred',

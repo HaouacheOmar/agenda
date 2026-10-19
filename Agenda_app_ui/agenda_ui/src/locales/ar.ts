@@ -1,5 +1,6 @@
 export default {
   dashboard: {
+    tagline: 'خطط، رتّب أولوياتك ولا تفوّت أي حدث.',
     title: 'لوحة تحكم الأجندة',
     totalEvents: 'عدد الأحداث الكلي',
     highPriority: 'أولوية عالية',
@@ -109,6 +110,7 @@ export default {
     days: 'أيام',
   },
   common: {
+    close: 'إغلاق',
     switchLanguage: 'تغيير اللغة',
     retry: 'إعادة المحاولة',
     error: 'حدث خطأ',

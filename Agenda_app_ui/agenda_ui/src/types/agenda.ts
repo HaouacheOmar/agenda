@@ -27,9 +27,9 @@ export const PRIORITIES: Priority[] = ['low', 'medium', 'high']
 
 // Single source for priority colors and how many days ahead to notify.
 export const PRIORITY_META: Record<Priority, { color: string; notifyDays: number }> = {
-  high: { color: '#ef4444', notifyDays: 3 },
-  medium: { color: '#f59e0b', notifyDays: 2 },
-  low: { color: '#10b981', notifyDays: 1 },
+  high: { color: '#ff5c7a', notifyDays: 3 },
+  medium: { color: '#fbbf24', notifyDays: 2 },
+  low: { color: '#34d399', notifyDays: 1 },
 }
 
 export const idOf = (ref: number | { id: number }) => (typeof ref === 'number' ? ref : ref.id)
