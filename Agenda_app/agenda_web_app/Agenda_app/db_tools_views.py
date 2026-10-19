@@ -22,6 +22,7 @@ REQUIRED_TABLES = {
     'event_event_list',
     'event_event',
 }
+MAX_BACKUPS = 5
 
 
 def get_sqlite_db_path() -> Path:
@@ -61,8 +62,8 @@ class ImportSQLiteView(APIView):
                 for chunk in uploaded_file.chunks():
                     destination.write(chunk)
 
+            connection = sqlite3.connect(str(temp_path))
             try:
-                connection = sqlite3.connect(str(temp_path))
                 integrity_row = connection.execute('PRAGMA integrity_check;').fetchone()
                 if not integrity_row or str(integrity_row[0]).lower() != 'ok':
                     return Response(
@@ -95,6 +96,8 @@ class ImportSQLiteView(APIView):
                 backup_name = f"db.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}.sqlite3"
                 backup_path = db_path.with_name(backup_name)
                 shutil.copy2(db_path, backup_path)
+                for old_backup in sorted(db_path.parent.glob('db.backup.*.sqlite3'))[:-MAX_BACKUPS]:
+                    old_backup.unlink(missing_ok=True)
 
             shutil.move(str(temp_path), str(db_path))
 

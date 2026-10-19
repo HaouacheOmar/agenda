@@ -1,97 +1,90 @@
 <script setup lang="ts">
-interface Props {
+import { computed } from 'vue'
+
+const props = defineProps<{
   label: string
   value: number
   total: number
   color: string
-}
+}>()
 
-const props = defineProps<Props>()
+// Share of all visible events, drawn as a progress ring.
+const RADIUS = 22
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS
+const dashOffset = computed(() => CIRCUMFERENCE * (1 - (props.total ? props.value / props.total : 0)))
 </script>
 
 <template>
-  <div class="meter-container">
-    <h3>{{ label }}</h3>
-    <div class="meter-wrapper">
-      <svg class="meter-svg" viewBox="0 0 120 120">
-        <circle
-          cx="60"
-          cy="60"
-          r="40"
-          fill="none"
-          stroke="#d6dde7"
-          stroke-width="3"
-        />
-        <circle
-          cx="60"
-          cy="60"
-          r="40"
-          fill="none"
-          :stroke="color"
-          stroke-width="3"
-        />
-      </svg>
-      <div class="meter-content">
-        <span class="meter-value" :style="{ color: props.color }">{{ value }}</span>
-      </div>
+  <div class="meter">
+    <div class="meter-text">
+      <span class="meter-label">{{ label }}</span>
+      <span class="meter-value">{{ value }}</span>
     </div>
+    <svg class="meter-ring" viewBox="0 0 56 56" aria-hidden="true">
+      <circle cx="28" cy="28" :r="RADIUS" class="meter-track" />
+      <circle
+        cx="28"
+        cy="28"
+        :r="RADIUS"
+        class="meter-arc"
+        stroke="currentColor"
+        :style="{ color }"
+        :stroke-dasharray="CIRCUMFERENCE"
+        :stroke-dashoffset="dashOffset"
+      />
+    </svg>
   </div>
 </template>
 
 <style scoped>
-.meter-container {
+.meter {
   display: flex;
-  flex-direction: column;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
+  height: 100%;
 }
 
-.meter-container h3 {
-  margin: 0;
-  font-size: 30px;
-  color: #111827;
-  font-weight: 600;
-  text-align: center;
-}
-
-.meter-wrapper {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.meter-svg {
-  width: 84px;
-  height: 84px;
-}
-
-.meter-content {
-  position: absolute;
+.meter-text {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  gap: 4px;
+}
+
+.meter-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-muted-fg);
 }
 
 .meter-value {
-  font-size: 42px;
-  font-weight: 500;
+  font-family: var(--font-heading);
+  font-size: 40px;
+  font-weight: 600;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
-@media (max-width: 640px) {
-  .meter-container h3 {
-    font-size: 22px;
-  }
+.meter-ring {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
 
-  .meter-svg {
-    width: 72px;
-    height: 72px;
-  }
+.meter-track,
+.meter-arc {
+  fill: none;
+  stroke-width: 5;
+}
 
-  .meter-value {
-    font-size: 36px;
-  }
+.meter-track {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.meter-arc {
+  stroke-linecap: round;
+  transition: stroke-dashoffset 600ms var(--ease-out);
+  filter: drop-shadow(0 0 6px currentColor);
 }
 </style>
