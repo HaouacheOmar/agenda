@@ -4,10 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Category
-from rest_framework import serializers
 from .serializers import CategorySerializer
-
-
 
 
 class CategoryListCreateView(APIView):

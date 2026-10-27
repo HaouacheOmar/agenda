@@ -1,118 +1,90 @@
+"""Whole-agenda export/import as JSON. Works on any database backend (SQLite locally, Neon in production)."""
 from __future__ import annotations
 
+import json
 from datetime import datetime
-from pathlib import Path
-import os
-import shutil
-import sqlite3
-import tempfile
 
-from django.conf import settings
-from django.db import connections
-from django.http import FileResponse
+from django.db import transaction
+from django.http import JsonResponse
 from rest_framework import status
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from category.models import Category
+from category.serializers import CategorySerializer
+from event.models import Event, Event_list
+from event.serializers import EventListSerializer, EventSerializer
 
-REQUIRED_TABLES = {
-    'django_migrations',
-    'category_category',
-    'event_event_list',
-    'event_event',
-}
-
-
-def get_sqlite_db_path() -> Path:
-    return Path(settings.DATABASES['default']['NAME'])
+FORMAT = 'agendaops'
+VERSION = 1
 
 
-class ExportSQLiteView(APIView):
+class InvalidBackup(Exception):
+    pass
+
+
+class ExportView(APIView):
     def get(self, request):
-        db_path = get_sqlite_db_path()
-        if not db_path.exists():
-            return Response({'err': 'SQLite database file not found.'}, status=status.HTTP_404_NOT_FOUND)
+        payload = {
+            'format': FORMAT,
+            'version': VERSION,
+            'exported_at': datetime.now().isoformat(timespec='seconds'),
+            'categories': CategorySerializer(Category.objects.order_by('id'), many=True).data,
+            'event_lists': EventListSerializer(Event_list.objects.order_by('id'), many=True).data,
+            'events': EventSerializer(Event.objects.order_by('id'), many=True).data,
+        }
+        response = JsonResponse(payload, json_dumps_params={'ensure_ascii': False, 'indent': 2})
+        filename = f"agenda-backup-{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        file_name = f'agenda-backup-{timestamp}.sqlite3'
-        return FileResponse(open(db_path, 'rb'), as_attachment=True, filename=file_name)
+
+def _save(serializer_class, data, what):
+    serializer = serializer_class(data=data)
+    if not serializer.is_valid():
+        raise InvalidBackup(f'Invalid {what}: {serializer.errors}')
+    return serializer.save()
 
 
-class ImportSQLiteView(APIView):
-    parser_classes = [MultiPartParser, FormParser]
+class ImportView(APIView):
+    """Replace every category, list and event with the contents of an export file, all or nothing."""
+
+    parser_classes = [MultiPartParser]
 
     def post(self, request):
-        uploaded_file = request.FILES.get('database')
-        if not uploaded_file:
-            return Response({'err': 'No database file provided.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        db_path = get_sqlite_db_path()
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        temp_fd, temp_name = tempfile.mkstemp(suffix='.sqlite3', dir=str(db_path.parent))
-        os.close(temp_fd)
-        temp_path = Path(temp_name)
-
-        backup_name = None
+        uploaded = request.FILES.get('file')
+        if not uploaded:
+            return Response({'err': 'No backup file provided.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            payload = json.load(uploaded)
+        except (ValueError, UnicodeDecodeError):
+            return Response({'err': 'The file is not a valid AgendaOPS backup (JSON expected).'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(payload, dict) or payload.get('format') != FORMAT:
+            return Response({'err': 'The file is not an AgendaOPS backup.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            with temp_path.open('wb') as destination:
-                for chunk in uploaded_file.chunks():
-                    destination.write(chunk)
+            with transaction.atomic():
+                Category.objects.all().delete()  # cascades to lists and events
+                # Ids are re-created; the file's ids only link its rows together.
+                category_ids = {}
+                for row in payload.get('categories', []):
+                    category_ids[row['id']] = _save(CategorySerializer, {'title': row['title']}, 'category').id
+                list_ids = {}
+                for row in payload.get('event_lists', []):
+                    data = {'title': row['title'], 'category': category_ids.get(row['category'])}
+                    list_ids[row['id']] = _save(EventListSerializer, data, 'event list').id
+                events = payload.get('events', [])
+                for row in events:
+                    data = {k: v for k, v in row.items() if k != 'id'}
+                    data['event_list'] = list_ids.get(row.get('event_list'))
+                    _save(EventSerializer, data, 'event')
+        except (InvalidBackup, KeyError, TypeError) as error:
+            return Response({'err': f'Import cancelled, nothing was changed. {error}'}, status=status.HTTP_400_BAD_REQUEST)
 
-            try:
-                connection = sqlite3.connect(str(temp_path))
-                integrity_row = connection.execute('PRAGMA integrity_check;').fetchone()
-                if not integrity_row or str(integrity_row[0]).lower() != 'ok':
-                    return Response(
-                        {'err': 'SQLite integrity check failed for uploaded file.'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-                table_rows = connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table';"
-                ).fetchall()
-                table_names = {row[0] for row in table_rows}
-            finally:
-                connection.close()
-
-            missing_tables = sorted(REQUIRED_TABLES - table_names)
-            if missing_tables:
-                return Response(
-                    {
-                        'err': (
-                            'Uploaded database is missing required tables: '
-                            + ', '.join(missing_tables)
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            connections.close_all()
-
-            if db_path.exists():
-                backup_name = f"db.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}.sqlite3"
-                backup_path = db_path.with_name(backup_name)
-                shutil.copy2(db_path, backup_path)
-
-            shutil.move(str(temp_path), str(db_path))
-
-            response_payload = {'msg': 'Database imported successfully.'}
-            if backup_name:
-                response_payload['backup'] = backup_name
-
-            return Response(response_payload, status=status.HTTP_200_OK)
-        except sqlite3.DatabaseError:
-            return Response(
-                {'err': 'Uploaded file is not a valid SQLite database.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        except Exception:
-            return Response(
-                {'err': 'Failed to import SQLite database.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-        finally:
-            if temp_path.exists():
-                temp_path.unlink(missing_ok=True)
+        return Response(
+            {
+                'msg': 'Data imported.',
+                'counts': {'categories': len(category_ids), 'event_lists': len(list_ids), 'events': len(events)},
+            }
+        )
