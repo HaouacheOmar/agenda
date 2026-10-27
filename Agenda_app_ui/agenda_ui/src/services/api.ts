@@ -57,10 +57,10 @@ export default {
   createCategory: (data: Pick<Category, 'title'>) => request<Category>('/category/categories/', json('POST', data)),
   deleteCategory: (pk: number) => request<void>(`/category/categories/${pk}/`, DELETE),
 
-  exportSQLite: async () => (await send('/data/export-sqlite/')).blob(),
-  importSQLite: (file: File) => {
+  exportData: async () => (await send('/data/export/')).blob(),
+  importData: (file: File) => {
     const body = new FormData()
-    body.append('database', file)
-    return request<{ msg: string; backup?: string }>('/data/import-sqlite/', { method: 'POST', body })
+    body.append('file', file)
+    return request<{ msg: string; counts: Record<string, number> }>('/data/import/', { method: 'POST', body })
   },
 }

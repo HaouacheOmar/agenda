@@ -1,95 +1,81 @@
-import sqlite3
-import tempfile
-from pathlib import Path
-from unittest import mock
+import json
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from rest_framework.test import APISimpleTestCase
+from rest_framework.test import APITestCase
 
-from . import db_tools_views
-from .db_tools_views import MAX_BACKUPS, REQUIRED_TABLES
-
-
-def make_sqlite(path, tables, marker='x'):
-    with sqlite3.connect(path) as conn:
-        for table in tables:
-            conn.execute(f'CREATE TABLE {table} (id INTEGER PRIMARY KEY, note TEXT)')
-        conn.execute(f"INSERT INTO {sorted(tables)[0]} (note) VALUES ('{marker}')")
-    conn.close()
+from category.models import Category
+from event.models import Event, Event_list
 
 
-def read_marker(path):
-    conn = sqlite3.connect(path)
-    try:
-        return conn.execute(f'SELECT note FROM {sorted(REQUIRED_TABLES)[0]}').fetchone()[0]
-    finally:
-        conn.close()
+def make_data(prefix='A'):
+    category = Category.objects.create(title=f'{prefix} cat')
+    event_list = Event_list.objects.create(title=f'{prefix} list', category=category)
+    Event.objects.create(
+        title=f'{prefix} event', event_list=event_list, priroty='high', description='d',
+        start_date='2026-01-01T10:00:00Z', end_date='2026-01-01T11:00:00Z',
+    )
 
 
-class SQLiteToolsTests(APISimpleTestCase):
-    """Export/import run against a temporary database file, never the real one."""
+class DataExportImportTests(APITestCase):
+    def export(self):
+        res = self.client.get('/data/export/')
+        self.assertEqual(res.status_code, 200)
+        return res
 
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.dir = Path(self.tmp.name)
-        self.db = self.dir / 'db.sqlite3'
-        make_sqlite(self.db, REQUIRED_TABLES, marker='current')
-        patcher = mock.patch.object(db_tools_views, 'get_sqlite_db_path', return_value=self.db)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.addCleanup(self.tmp.cleanup)
+    def upload(self, content, name='backup.json'):
+        body = content if isinstance(content, bytes) else json.dumps(content).encode()
+        return self.client.post('/data/import/', {'file': SimpleUploadedFile(name, body)}, format='multipart')
 
-    def upload(self, path):
-        return self.client.post(
-            '/data/import-sqlite/',
-            {'database': SimpleUploadedFile('upload.sqlite3', Path(path).read_bytes())},
-            format='multipart',
+    def test_export_is_a_downloadable_json_backup(self):
+        make_data()
+        res = self.export()
+        self.assertIn('attachment; filename="agenda-backup-', res['Content-Disposition'])
+        payload = json.loads(res.content)
+        self.assertEqual(payload['format'], 'agendaops')
+        self.assertEqual([c['title'] for c in payload['categories']], ['A cat'])
+        self.assertEqual(payload['events'][0]['priroty'], 'high')
+
+    def test_import_replaces_everything_with_the_backup(self):
+        make_data('A')
+        backup = json.loads(self.export().content)
+        Category.objects.all().delete()
+        make_data('B')
+
+        res = self.upload(backup)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['counts'], {'categories': 1, 'event_lists': 1, 'events': 1})
+        self.assertEqual(list(Event.objects.values_list('title', flat=True)), ['A event'])
+        event = Event.objects.get()
+        self.assertEqual(event.event_list.category.title, 'A cat')
+
+    def test_round_trip_keeps_relations_when_ids_change(self):
+        make_data('A')
+        make_data('C')
+        backup = json.loads(self.export().content)
+        self.assertEqual(self.upload(backup).status_code, 200)
+        self.assertEqual(
+            sorted(Event.objects.values_list('title', 'event_list__title', 'event_list__category__title')),
+            [('A event', 'A list', 'A cat'), ('C event', 'C list', 'C cat')],
         )
 
-    def test_export_returns_the_database_file(self):
-        res = self.client.get('/data/export-sqlite/')
-        self.assertEqual(res.status_code, 200)
-        self.assertIn('attachment; filename="agenda-backup-', res['Content-Disposition'])
-        self.assertEqual(b''.join(res.streaming_content), self.db.read_bytes())
-
-    def test_export_missing_file_returns_404(self):
-        self.db.unlink()
-        self.assertEqual(self.client.get('/data/export-sqlite/').status_code, 404)
-
     def test_import_without_file_returns_400(self):
-        res = self.client.post('/data/import-sqlite/', {}, format='multipart')
+        self.assertEqual(self.client.post('/data/import/', {}, format='multipart').status_code, 400)
+
+    def test_import_rejects_non_json(self):
+        make_data()
+        self.assertEqual(self.upload(b'not json').status_code, 400)
+        self.assertEqual(Event.objects.count(), 1)
+
+    def test_import_rejects_foreign_json(self):
+        make_data()
+        self.assertEqual(self.upload({'hello': 'world'}).status_code, 400)
+        self.assertEqual(Event.objects.count(), 1)
+
+    def test_invalid_row_rolls_back_everything(self):
+        make_data('A')
+        backup = json.loads(self.export().content)
+        backup['events'][0]['end_date'] = '2025-01-01T00:00:00Z'  # before start
+        res = self.upload(backup)
         self.assertEqual(res.status_code, 400)
-
-    def test_import_rejects_non_sqlite_file(self):
-        bad = self.dir / 'bad.sqlite3'
-        bad.write_bytes(b'not a database')
-        res = self.upload(bad)
-        self.assertEqual(res.status_code, 400)
-        self.assertEqual(read_marker(self.db), 'current')
-
-    def test_import_rejects_database_missing_tables(self):
-        partial = self.dir / 'partial.sqlite3'
-        make_sqlite(partial, {'category_category'})
-        res = self.upload(partial)
-        self.assertEqual(res.status_code, 400)
-        self.assertIn('event_event', res.data['err'])
-        self.assertEqual(read_marker(self.db), 'current')
-
-    def test_import_replaces_database_and_keeps_a_backup(self):
-        new = self.dir / 'new.sqlite3'
-        make_sqlite(new, REQUIRED_TABLES, marker='imported')
-        res = self.upload(new)
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(read_marker(self.db), 'imported')
-        backup = self.dir / res.data['backup']
-        self.assertEqual(read_marker(backup), 'current')
-        # no temp upload files left behind
-        self.assertEqual(sorted(p.name for p in self.dir.glob('tmp*')), [])
-
-    def test_import_keeps_only_the_latest_backups(self):
-        for i in range(MAX_BACKUPS + 2):
-            (self.dir / f'db.backup.20260101_00000{i}.sqlite3').write_bytes(b'old')
-        new = self.dir / 'new.sqlite3'
-        make_sqlite(new, REQUIRED_TABLES)
-        self.assertEqual(self.upload(new).status_code, 200)
-        self.assertEqual(len(list(self.dir.glob('db.backup.*.sqlite3'))), MAX_BACKUPS)
+        self.assertIn('nothing was changed', res.data['err'])
+        self.assertEqual(list(Event.objects.values_list('title', flat=True)), ['A event'])

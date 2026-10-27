@@ -40,7 +40,7 @@ describe('api requests', () => {
 
   it('lets the browser set the multipart boundary for uploads', async () => {
     fetchMock.mockResolvedValue(json({ msg: 'ok' }))
-    await api.importSQLite(new File(['x'], 'db.sqlite3'))
+    await api.importData(new File(['{}'], 'backup.json'))
     const init = fetchMock.mock.calls[0]![1]!
     expect(init.body).toBeInstanceOf(FormData)
     expect(init.headers).toBeUndefined()
