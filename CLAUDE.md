@@ -53,7 +53,7 @@ The e2e suite starts its own servers (Django on 8001 with `DB_PATH=node_modules/
 `Category` → `Event_list` (FK `category`, CASCADE) → `Event` (FK `event_list`, `related_name="events"`, CASCADE). Deleting a category or event list cascades to its events.
 
 - The `Event` priority field is spelled **`priroty`** (values `low`/`medium`/`high`). This name is in the DB schema, serializers, and frontend payloads — don't "fix" it in one place only.
-- URL prefixes: `/event/...` (event lists, events, by-eventlist, by-priority), `/category/categories/...`, and `/data/export-sqlite/` + `/data/import-sqlite/` in [Agenda_app/db_tools_views.py](Agenda_app/agenda_web_app/Agenda_app/db_tools_views.py).
+- URL prefixes: `/event/...` (event lists, events, by-eventlist, by-priority), `/category/categories/...`, and `/data/export/` + `/data/import/` in [Agenda_app/db_tools_views.py](Agenda_app/agenda_web_app/Agenda_app/db_tools_views.py).
 - `APPEND_SLASH = False` and trailing slashes are inconsistent between routes (e.g. `events/<pk>` has none, `eventlists/<pk>/` has one). The frontend URL must match exactly — check `event/urls.py` / `category/urls.py` when adding or calling endpoints.
 - `/data/export/` and `/data/import/` ([Agenda_app/db_tools_views.py](Agenda_app/agenda_web_app/Agenda_app/db_tools_views.py)) exchange a JSON backup (`format: "agendaops"`), database-independent. Import replaces everything inside one transaction and re-creates ids, remapping relations; a new model that must survive a round-trip has to be added to both views.
 
