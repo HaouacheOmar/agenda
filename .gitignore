@@ -1,2 +1,4 @@
 .venv/
 .vscode/
+# Local design tooling (impeccable critiques, live sessions)
+.impeccable/

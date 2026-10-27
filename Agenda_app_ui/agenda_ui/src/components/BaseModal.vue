@@ -1,32 +1,64 @@
 <script setup lang="ts">
-import { nextTick, useId, useTemplateRef, watch } from 'vue'
+import { nextTick, onUnmounted, useId, useTemplateRef, watch } from 'vue'
 import { AnimatePresence, motion } from 'motion-v'
 import { useEventListener } from '@vueuse/core'
 import { X } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
+import { registerDialog } from '../composables/useShortcuts'
 
-const props = defineProps<{ open: boolean; title: string; error?: string | null }>()
-const emit = defineEmits<{ close: [] }>()
+const props = defineProps<{ open: boolean; title: string; error?: string | null; size?: 'sm' | 'md' }>()
+const emit = defineEmits<{ close: []; submit: [] }>()
 const { t } = useI18n()
 const titleId = useId()
 // Plain element ref: a ref on motion.div would give the component, not the DOM node.
 const body = useTemplateRef<HTMLElement>('body')
+let returnFocusTo: HTMLElement | null = null
+
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+const dialog = () => body.value?.closest<HTMLElement>('[role="dialog"]') ?? null
 
 useEventListener(document, 'keydown', (e: KeyboardEvent) => {
-  if (props.open && e.key === 'Escape') emit('close')
+  if (!props.open) return
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    emit('close')
+  } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault()
+    emit('submit')
+  } else if (e.key === 'Tab') {
+    // Keep focus inside the dialog.
+    const items = [...(dialog()?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])]
+    if (!items.length) return
+    const first = items[0]!
+    const last = items[items.length - 1]!
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }
 })
 
-// Move focus into the dialog when it opens, so keyboard users land on the first field.
+onUnmounted(() => props.open && registerDialog(false))
+
 watch(
   () => props.open,
   async (open) => {
-    if (!open) return
-    await nextTick()
-    const dialog = body.value?.closest('[role="dialog"]')
-    const target =
-      body.value?.querySelector<HTMLElement>('input, select, textarea') ??
-      dialog?.querySelector<HTMLElement>('.modal-actions button') // Cancel, never the destructive action
-    target?.focus()
+    registerDialog(open)
+    if (open) {
+      returnFocusTo = document.activeElement as HTMLElement | null
+      await nextTick()
+      // First field, or Cancel (never the destructive action) in a confirmation.
+      const target =
+        body.value?.querySelector<HTMLElement>('input, select, textarea') ??
+        dialog()?.querySelector<HTMLElement>('.modal-actions button')
+      target?.focus()
+    } else if (returnFocusTo?.isConnected) {
+      returnFocusTo.focus()
+      returnFocusTo = null
+    }
   },
 )
 </script>
@@ -39,19 +71,19 @@ watch(
         class="modal-overlay"
         :initial="{ opacity: 0 }"
         :animate="{ opacity: 1 }"
-        :exit="{ opacity: 0, transition: { duration: 0.15 } }"
-        :transition="{ duration: 0.2 }"
+        :exit="{ opacity: 0, transition: { duration: 0.12 } }"
+        :transition="{ duration: 0.18 }"
         @click.self="emit('close')"
       >
         <motion.div
-          class="modal"
+          :class="['modal', `modal-${size ?? 'md'}`]"
           role="dialog"
           aria-modal="true"
           :aria-labelledby="titleId"
-          :initial="{ opacity: 0, scale: 0.94, y: 16 }"
-          :animate="{ opacity: 1, scale: 1, y: 0 }"
-          :exit="{ opacity: 0, scale: 0.97, y: 8, transition: { duration: 0.15 } }"
-          :transition="{ type: 'spring', bounce: 0.2, visualDuration: 0.35 }"
+          :initial="{ opacity: 0, transform: 'translateY(8px) scale(0.97)' }"
+          :animate="{ opacity: 1, transform: 'translateY(0px) scale(1)' }"
+          :exit="{ opacity: 0, transform: 'translateY(4px) scale(0.98)', transition: { duration: 0.12 } }"
+          :transition="{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }"
         >
           <header class="modal-header">
             <h2 :id="titleId">{{ title }}</h2>
@@ -66,7 +98,7 @@ watch(
             <slot />
           </div>
 
-          <footer class="modal-actions">
+          <footer v-if="$slots.actions" class="modal-actions">
             <slot name="actions" />
           </footer>
         </motion.div>
@@ -82,46 +114,65 @@ watch(
   z-index: 1000;
   display: grid;
   place-items: center;
-  padding: 16px;
-  background: rgba(4, 5, 12, 0.7);
-  backdrop-filter: blur(6px);
+  padding: var(--space-4);
+  background: var(--scrim);
 }
 
 .modal {
-  width: min(480px, 100%);
-  max-height: calc(100vh - 32px);
+  width: min(520px, 100%);
+  max-height: calc(100dvh - 32px);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 24px;
-  background: var(--color-elevated);
-  border: 1px solid var(--color-border-strong);
+  gap: var(--space-5);
+  padding: var(--space-6);
+  background: var(--surface);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-pop);
+}
+
+.modal-sm {
+  width: min(420px, 100%);
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .modal-header h2 {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: var(--text-lg);
 }
 
 .modal-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .modal-overlay {
+    place-items: end stretch;
+    padding: 0;
+  }
+
+  .modal {
+    width: 100%;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: var(--space-5) var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom));
+  }
+
+  .modal-actions .btn {
+    flex: 1;
+  }
 }
 </style>

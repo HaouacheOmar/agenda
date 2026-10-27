@@ -25,11 +25,11 @@ export interface EventItem {
 
 export const PRIORITIES: Priority[] = ['low', 'medium', 'high']
 
-// Single source for priority colors and how many days ahead to notify.
-export const PRIORITY_META: Record<Priority, { color: string; notifyDays: number }> = {
-  high: { color: '#ff5c7a', notifyDays: 3 },
-  medium: { color: '#fbbf24', notifyDays: 2 },
-  low: { color: '#34d399', notifyDays: 1 },
+// How many days ahead each priority is reminded. Colors live in CSS (--prio-*).
+export const PRIORITY_META: Record<Priority, { notifyDays: number }> = {
+  high: { notifyDays: 3 },
+  medium: { notifyDays: 2 },
+  low: { notifyDays: 1 },
 }
 
 export const idOf = (ref: number | { id: number }) => (typeof ref === 'number' ? ref : ref.id)
